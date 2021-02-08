@@ -359,6 +359,18 @@ mod tests {
     }
 
     #[test]
+    fn write_just_front_empty() {
+      let mut mnums = [0u8; 10];
+      let src: [u8; 5] = [1,2,3,4,5];
+
+      let (front, back) = mnums.split_at_mut(0);
+      let mut mpair: crate::SlicePairMut<u8> = crate::SlicePairMut::new(front, back);
+      let result = mpair.write(&src);
+      assert_eq!(result.unwrap(), 5);
+      assert_eq!(mnums, [1,2,3,4,5,0,0,0,0,0]);
+    }
+
+    #[test]
     fn write_fits_in_front() {
       let mut mnums = [0u8; 10];
       let src: [u8; 5] = [1,2,3,4,5];
