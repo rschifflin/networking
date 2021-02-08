@@ -64,7 +64,7 @@ impl BlobRing {
         let dst_size_bytes = self.buffer[self.head_idx..self.head_idx+PREFIX_BYTES].as_ref().read_u32::<BigEndian>().unwrap() as usize;
         let src_size_bytes = PREFIX_BYTES + dst_size_bytes;
         if dst_size_bytes > dst.len() { return None; }
-        dst.copy_from_slice(&self.buffer[self.head_idx+PREFIX_BYTES..self.head_idx+src_size_bytes]);
+        dst[..dst_size_bytes].copy_from_slice(&self.buffer[self.head_idx+PREFIX_BYTES..self.head_idx+src_size_bytes]);
         (src_size_bytes, dst_size_bytes)
       } else {
         // Represent our used space as a buffer wrapping from head to tail

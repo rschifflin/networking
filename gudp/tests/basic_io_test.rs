@@ -11,7 +11,7 @@ fn it_sends() {
     test_io.recv_from.push(b"hello from test".to_vec());
   }
 
-  let conn = Connection::from_io(test_io.clone());
+  let conn = Connection::from_parts(test_io.clone(), ());
   let _send_result = conn.send(b"hello to test");
   let mut recv_buf = [0u8; 1000];
   let _recv_result = conn.recv(&mut recv_buf);
