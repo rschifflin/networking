@@ -1,6 +1,6 @@
 use std::net::UdpSocket;
 use std::sync::{Arc, Mutex};
-use blob_ring::BlobRing;
+use blob_ring::{BlobRing, WithOpt};
 
 // Alias for arc of mutex of ring blob
 use crate::types::SharedRingBuf;
@@ -25,7 +25,7 @@ impl Service {
 
     // Daemon thread
     std::thread::Builder::new().name("gudp daemon".to_string()).spawn(move || {
-      let mut states: Vec<State> = vec![];
+      let mut states: Vec<(State, UdpSocket)> = vec![];
       loop {
         std::thread::sleep(std::time::Duration::from_millis(1000));
         match rx.try_recv() {
@@ -36,16 +36,16 @@ impl Service {
             // Create new state for the socket. Store the state locally
             // TODO: Hash by port pairs or something instead for easy removal
             println!("Got connection: {:?}", io);
-            states.push(State::new(io, buf_read, buf_write));
+            states.push((State::new(buf_read, buf_write), io));
           },
           _ => {}
         };
 
-        for state in states.iter_mut() {
+        for (state, socket) in states.iter_mut() {
           // Read socket into bufread
           {
             let mut buf = state.buf_read.lock().expect("Could not acquire unpoisoned read lock");
-            let recv = state.socket.recv(&mut state.buf_local);
+            let recv = socket.recv(&mut state.buf_local);
             if let Ok(size) = recv {
               buf.push_blob_back(&state.buf_local[..size]);
             }
@@ -56,11 +56,12 @@ impl Service {
             let mut buf = state.buf_write.lock().expect("Could not acquire unpoisoned write lock");
             let buf = &mut *buf;
             if buf.count() > 0 {
-              let size = buf.pop_blob_front(&mut state.buf_local).expect("Could not pop");
-              let send = state.socket.send(&state.buf_local[..size]);
-              if let Err(_) = send {
-                buf.push_blob_back(&state.buf_local[..size]).expect("Could not push");
-              }
+              let buf_local = &mut state.buf_local;
+              buf.with_blob_front(buf_local, |buf_local, bytes| {
+                let send = socket.send(&buf_local[..bytes]);
+                let opt = match send { Ok(_) => WithOpt::Pop, Err(_) => WithOpt::Peek };
+                (send, opt)
+              }).expect("Could not pop");
             }
           }
         }
