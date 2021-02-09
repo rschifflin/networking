@@ -1,5 +1,5 @@
 [package]
-name = "blob-ring"
+name = "bring"
 version = "0.1.0"
 authors = ["Mark Schifflin <randy.schifflin@gmail.com>"]
 edition = "2018"

@@ -4,7 +4,7 @@ use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
 const PREFIX_BYTES: usize = 4;
 
-// Choice of what to do with the front blob when calling with_blob_front:
+// Choice of what to do with the front blob when calling with_front:
 #[derive(Copy, Clone, Debug)]
 pub enum WithOpt {
   Peek, // to keep it in the ring buffer
@@ -12,7 +12,7 @@ pub enum WithOpt {
 }
 
 #[derive(Debug)]
-pub struct BlobRing {
+pub struct Bring {
   buffer: Vec<u8>,
   count: usize,
   remaining: usize,
@@ -20,10 +20,10 @@ pub struct BlobRing {
   next_idx: usize
 }
 
-impl BlobRing {
-  pub fn from_vec(buffer: Vec<u8>) -> BlobRing {
+impl Bring {
+  pub fn from_vec(buffer: Vec<u8>) -> Bring {
     let remaining = buffer.len();
-    BlobRing {
+    Bring {
       buffer,
       count: 0,
       remaining,
@@ -37,7 +37,7 @@ impl BlobRing {
   }
 
   /// Attempt to push blob to back of ring. If there's insufficient space, return None. Otherwise return size of blob
-  pub fn push_blob_back(&mut self, src: &[u8]) -> Option<usize> {
+  pub fn push_back(&mut self, src: &[u8]) -> Option<usize> {
     let src_size_bytes = PREFIX_BYTES + src.len();
     if src_size_bytes > self.remaining { return None; }
     self.remaining -= src_size_bytes;
@@ -60,24 +60,24 @@ impl BlobRing {
     Some(src.len())
   }
 
-  pub fn with_blob_front<F, T>(&mut self, dst: &mut [u8], then: F) -> Option<T> where
+  pub fn with_front<F, T>(&mut self, dst: &mut [u8], then: F) -> Option<T> where
     F: FnOnce(&mut [u8], usize) -> (T, WithOpt) {
-    self.peek_blob_front(dst).map(|(src_size_bytes, dst_size_bytes)| {
+    self.peek_front(dst).map(|(src_size_bytes, dst_size_bytes)| {
       let (res, opt) = then(dst, dst_size_bytes);
       if let WithOpt::Pop = opt {
-        self.drop_blob_front(src_size_bytes);
+        self.drop_front(src_size_bytes);
       }
       res
     })
   }
 
-  fn drop_blob_front(&mut self, src_size_bytes: usize) {
+  fn drop_front(&mut self, src_size_bytes: usize) {
     self.count -= 1;
     self.remaining += src_size_bytes;
     self.head_idx = (self.head_idx + src_size_bytes) % self.buffer.len();
   }
 
-  fn peek_blob_front(&mut self, dst: &mut [u8]) -> Option<(usize, usize)> {
+  fn peek_front(&mut self, dst: &mut [u8]) -> Option<(usize, usize)> {
     if self.count <= 0 { return None; }
 
     // If no wrapping has occured, it's easy
@@ -100,9 +100,9 @@ impl BlobRing {
   }
 
   /// Attempt to pop blob off front of ring and write it to dst. If there's no blobs left, return None. Otherwise return size of blob
-  pub fn pop_blob_front(&mut self, dst: &mut [u8]) -> Option<usize> {
-    self.peek_blob_front(dst).map(|(src_size_bytes, dst_size_bytes)| {
-      self.drop_blob_front(src_size_bytes);
+  pub fn pop_front(&mut self, dst: &mut [u8]) -> Option<usize> {
+    self.peek_front(dst).map(|(src_size_bytes, dst_size_bytes)| {
+      self.drop_front(src_size_bytes);
       dst_size_bytes
     })
   }
@@ -115,27 +115,27 @@ mod tests {
       let nums = vec![0u8; 4+3 + 4+4 + 4+5];
       let mut dst =  [0u8; 5];
 
-      let mut ring = crate::BlobRing::from_vec(nums);
-      ring.push_blob_back(&[1,2,3]);
-      ring.push_blob_back(&[4,5,6,7]);
-      ring.push_blob_back(&[8,9,10,11,12]);
+      let mut ring = crate::Bring::from_vec(nums);
+      ring.push_back(&[1,2,3]);
+      ring.push_back(&[4,5,6,7]);
+      ring.push_back(&[8,9,10,11,12]);
 
-      ring.pop_blob_front(&mut dst);
+      ring.pop_front(&mut dst);
       assert_eq!(dst[..3], [1,2,3]);
-      ring.pop_blob_front(&mut dst);
+      ring.pop_front(&mut dst);
       assert_eq!(dst[..4], [4,5,6,7]);
-      ring.pop_blob_front(&mut dst);
+      ring.pop_front(&mut dst);
       assert_eq!(dst[..5], [8,9,10,11,12]);
 
-      ring.push_blob_back(&[1,2,3,4,5]);
-      ring.push_blob_back(&[6,7,8,9]);
-      ring.push_blob_back(&[10,11,12]);
+      ring.push_back(&[1,2,3,4,5]);
+      ring.push_back(&[6,7,8,9]);
+      ring.push_back(&[10,11,12]);
 
-      ring.pop_blob_front(&mut dst);
+      ring.pop_front(&mut dst);
       assert_eq!(dst[..5], [1,2,3,4,5]);
-      ring.pop_blob_front(&mut dst);
+      ring.pop_front(&mut dst);
       assert_eq!(dst[..4], [6,7,8,9]);
-      ring.pop_blob_front(&mut dst);
+      ring.pop_front(&mut dst);
       assert_eq!(dst[..3], [10,11,12]);
     }
 
@@ -144,10 +144,10 @@ mod tests {
       let nums = vec![0u8; 4+10 + 7];
       let mut dst =  [0u8; 10];
 
-      let mut ring = crate::BlobRing::from_vec(nums);
+      let mut ring = crate::Bring::from_vec(nums);
       for _ in 0..50 {
-        ring.push_blob_back(&[0,1,2,3,4,5,6,7,8,9]);
-        ring.pop_blob_front(&mut dst);
+        ring.push_back(&[0,1,2,3,4,5,6,7,8,9]);
+        ring.pop_front(&mut dst);
       }
     }
 
@@ -156,74 +156,74 @@ mod tests {
       let nums = vec![0u8; 4+3 + 4+4 + 4+5];
       let mut dst =  [0u8; 5];
 
-      let mut ring = crate::BlobRing::from_vec(nums);
-      assert_eq!(ring.pop_blob_front(&mut dst), None);
+      let mut ring = crate::Bring::from_vec(nums);
+      assert_eq!(ring.pop_front(&mut dst), None);
 
-      ring.push_blob_back(&[1,2,3]);
-      ring.push_blob_back(&[4,5,6,7]);
-      let overflow_push = ring.push_blob_back(&[8,9,10,11,12,13]);
+      ring.push_back(&[1,2,3]);
+      ring.push_back(&[4,5,6,7]);
+      let overflow_push = ring.push_back(&[8,9,10,11,12,13]);
       assert_eq!(overflow_push, None);
-      let ok_push = ring.push_blob_back(&[8,9,10,11,12]);
+      let ok_push = ring.push_back(&[8,9,10,11,12]);
       assert_eq!(ok_push, Some(5));
 
-      ring.pop_blob_front(&mut dst);
+      ring.pop_front(&mut dst);
       assert_eq!(dst[..3], [1,2,3]);
-      ring.pop_blob_front(&mut dst);
+      ring.pop_front(&mut dst);
       assert_eq!(dst[..4], [4,5,6,7]);
-      ring.pop_blob_front(&mut dst);
+      ring.pop_front(&mut dst);
       assert_eq!(dst[..5], [8,9,10,11,12]);
 
-      ring.push_blob_back(&[1,2,3,4,5]);
-      ring.push_blob_back(&[6,7,8,9]);
-      ring.push_blob_back(&[10,11,12]);
+      ring.push_back(&[1,2,3,4,5]);
+      ring.push_back(&[6,7,8,9]);
+      ring.push_back(&[10,11,12]);
 
-      ring.pop_blob_front(&mut dst);
+      ring.pop_front(&mut dst);
       assert_eq!(dst[..5], [1,2,3,4,5]);
-      ring.pop_blob_front(&mut dst);
+      ring.pop_front(&mut dst);
       assert_eq!(dst[..4], [6,7,8,9]);
-      let ok_pop = ring.pop_blob_front(&mut dst);
+      let ok_pop = ring.pop_front(&mut dst);
       assert_eq!(ok_pop, Some(3));
 
-      let underflow_pop = ring.pop_blob_front(&mut dst);
+      let underflow_pop = ring.pop_front(&mut dst);
       assert_eq!(underflow_pop, None);
     }
 
     #[test]
-    fn with_blob_front() {
+    fn with_front() {
       let nums = vec![0u8; 4+3 + 4+4 + 4+5];
       let mut dst =  [0u8; 5];
 
-      let mut ring = crate::BlobRing::from_vec(nums);
-      assert_eq!(ring.pop_blob_front(&mut dst), None);
+      let mut ring = crate::Bring::from_vec(nums);
+      assert_eq!(ring.pop_front(&mut dst), None);
 
-      ring.push_blob_back(&[1,2,3]);
-      ring.push_blob_back(&[4,5,6,7]);
-      ring.push_blob_back(&[8,9,10,11,12]);
+      ring.push_back(&[1,2,3]);
+      ring.push_back(&[4,5,6,7]);
+      ring.push_back(&[8,9,10,11,12]);
 
-      let with_result = ring.with_blob_front(&mut dst, |buf, bytes| {
+      let with_result = ring.with_front(&mut dst, |buf, bytes| {
         assert_eq!(buf[..bytes], [1,2,3]);
         // Setting WithOpt::Peek keeps the front-most blob on the ring buffer
         ("any return value", crate::WithOpt::Peek)
       });
       assert_eq!(with_result.unwrap(), "any return value");
 
-      ring.with_blob_front(&mut dst, |buf, bytes| {
+      ring.with_front(&mut dst, |buf, bytes| {
         assert_eq!(buf[..bytes], [1,2,3]);
         // Setting WithOpt::Pop removes the front-most blob from the ring buffer
         ((), crate::WithOpt::Pop)
       });
 
-      ring.with_blob_front(&mut dst, |buf, bytes| {
+      ring.with_front(&mut dst, |buf, bytes| {
         assert_eq!(buf[..bytes], [4,5,6,7]);
         ((), crate::WithOpt::Pop)
       });
 
-      ring.with_blob_front(&mut dst, |buf, bytes| {
+      ring.with_front(&mut dst, |buf, bytes| {
         assert_eq!(buf[..bytes], [8,9,10,11,12]);
         ((), crate::WithOpt::Pop)
       });
 
-      let with_result: Option<()> = ring.with_blob_front(&mut dst, |_buf, _bytes| {
+      let with_result: Option<()> = ring.with_front(&mut dst, |_buf, _bytes| {
         panic!("Luckily this function is never called if there is nothing to peek/pop")
       });
       assert!(with_result.is_none());

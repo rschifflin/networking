@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
 use mio::{Poll, Events, Token, Interest, Waker};
 use mio::net::UdpSocket as MioUdpSocket;
-use blob_ring::{BlobRing, WithOpt};
+use bring::{Bring, WithOpt};
 
 // Alias for arc of mutex of ring blob
 use crate::types::SharedRingBuf;
@@ -73,7 +73,7 @@ impl Service {
               let mut buf = state.buf_read.lock().expect("Could not acquire unpoisoned read lock");
               match socket.recv(&mut state.buf_local) {
                 Ok(size) => {
-                  buf.push_blob_back(&state.buf_local[..size]);
+                  buf.push_back(&state.buf_local[..size]);
                 },
                 Err(e) => {
                   if e.kind() == std::io::ErrorKind::WouldBlock {} // This is expected for nonblocking io
@@ -90,7 +90,7 @@ impl Service {
           let buf = &mut *buf;
           if buf.count() > 0 {
             let buf_local = &mut state.buf_local;
-            match buf.with_blob_front(buf_local, |buf_local, bytes| {
+            match buf.with_front(buf_local, |buf_local, bytes| {
               let send = socket.send(&buf_local[..bytes]);
               let opt = match send {
                 Ok(_) => WithOpt::Pop,
@@ -122,8 +122,8 @@ impl Service {
     let buf_read_vec = vec![0u8; CONFIG_BUF_SIZE_BYTES];
     let buf_write_vec = vec![0u8; CONFIG_BUF_SIZE_BYTES];
 
-    let buf_read: SharedRingBuf = Arc::new(Mutex::new(BlobRing::from_vec(buf_read_vec)));
-    let buf_write: SharedRingBuf = Arc::new(Mutex::new(BlobRing::from_vec(buf_write_vec)));
+    let buf_read: SharedRingBuf = Arc::new(Mutex::new(Bring::from_vec(buf_read_vec)));
+    let buf_write: SharedRingBuf = Arc::new(Mutex::new(Bring::from_vec(buf_write_vec)));
     self.daemon_chan.send(
       ChannelMsg::NewConnection(self.next_conn_id, other_sock, buf_read.clone(), buf_write.clone())
     ).expect("Could not send new socket to gudp thread");

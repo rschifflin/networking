@@ -9,5 +9,5 @@ edition = "2018"
 [dependencies]
 crossbeam = "0.8.0"
 byteorder = "1"
-blob-ring = { path = "../blob-ring" }
+bring = { path = "../bring" }
 mio = {version = "0.7.7", features = ["net", "os-poll"] }
