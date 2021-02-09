@@ -1,6 +1,12 @@
-use mio::Waker;
+use std::net::UdpSocket;
 use std::sync::Arc;
+
+use crossbeam::channel;
+use mio::Waker;
+
+use crate::Service;
 use crate::types::SharedRingBuf;
+use crate::types::{FromDaemon, ToDaemon};
 
 // A user-facing GUDP Connection interface
 pub struct Connection {
@@ -43,4 +49,21 @@ impl Connection {
         std::thread::sleep(std::time::Duration::from_millis(10));
       }
     }
+}
+
+pub fn connect(service: &Service, socket: UdpSocket) -> Option<Connection> {
+  let (tx, rx) = channel::bounded(1);
+  let (tx_to_daemon, waker) = service.clone_parts();
+  tx_to_daemon.send(ToDaemon::Connect(socket, tx))
+    .expect("Could not send new connection to daemon");
+
+  waker.wake() // Force daemon to handle this new connection immediately
+    .expect("Could not wake daemon to receive new connection");
+
+  // Block until connection is established or the daemon dies trying I guess
+  // TODO: Result<Connection> in case any other msg or the daemon thread dying
+  if let Ok(FromDaemon::Connection(buf_read, buf_write)) = rx.recv() {
+    return Some(Connection::new(waker, buf_read, buf_write));
+  }
+  None
 }

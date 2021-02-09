@@ -11,33 +11,36 @@ fn main() {
   socket.set_nonblocking(true).expect("Could not set nonblocking!");
 
   let mut response_buffer = [0u8; 1000];
-  let mut service = gudp::Service::initialize();
-  let connection = service.connect_socket(socket);
-
+  let service = gudp::Service::initialize();
   if let Some("-l") = args.next().as_deref() {
-    println!("Listening on {} for messages from {}", src_port, dst_port);
-    listen(connection, &mut response_buffer)
+    let listener = gudp::listen(&service, socket);
+    listen(listener, &mut response_buffer, src_port, dst_port)
   } else {
-    println!("Pinging {} from {}", dst_port, src_port);
-    ping(connection, &mut response_buffer)
+    let connection = gudp::connect(&service, socket).expect("Could not connect gudp");
+    ping(connection, &mut response_buffer, src_port, dst_port)
   }
 }
 
-fn listen(conn: gudp::Connection, buf: &mut [u8]) {
+fn listen(listener: gudp::Listener, buf: &mut [u8], src_port: u16, dst_port: u16) {
+  // Block until a connection has been established
+  let conn = listener.accept().expect("Could not accept connection");
+
+  println!("Listening on {} for messages from {}", src_port, dst_port);
   loop {
     let response_len = conn.recv(buf).expect("Failed to recv");
-    println!("<< {}", std::str::from_utf8(&buf[..response_len]).expect("Did not recv utf8"));
+    println!("[From {}]: {}", dst_port, std::str::from_utf8(&buf[..response_len]).expect("Did not recv utf8"));
     conn.send(b"pong").expect("Failed to send");
-    println!(">> pong");
+    println!("> pong");
   }
 }
 
-fn ping(conn: gudp::Connection, buf: &mut [u8]) {
+fn ping(conn: gudp::Connection, buf: &mut [u8], src_port: u16, dst_port: u16) {
+  println!("Pinging {} from {}", dst_port, src_port);
   loop {
     conn.send(b"ping").expect("Failed to send");
-    println!(">> ping");
+    println!("> ping");
     let response_len = conn.recv(buf).expect("Failed to recv");
-    println!("<< {}", std::str::from_utf8(&buf[..response_len]).expect("Did not recv utf8"));
+    println!("[From {}]: {}", dst_port, std::str::from_utf8(&buf[..response_len]).expect("Did not recv utf8"));
     std::thread::sleep(std::time::Duration::from_millis(1000));
   }
 }
