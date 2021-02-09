@@ -18,8 +18,8 @@ impl Listener {
   // TODO: Result<Connection> in case any other msg or the daemon thread dying
   // TODO: What happens when listeners drop before calling accept?? And what _should_ happen ideally?
   pub fn accept(self) -> Option<Connection> {
-    if let Ok(FromDaemon::Connection(buf_read, buf_write)) = self.rx.recv() {
-      return Some(Connection::new(self.waker, buf_read, buf_write));
+    if let Ok(FromDaemon::Connection(buf_read, buf_write, read_cond)) = self.rx.recv() {
+      return Some(Connection::new(self.waker, buf_read, buf_write, read_cond));
     }
 
     None

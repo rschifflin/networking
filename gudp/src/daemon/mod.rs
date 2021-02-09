@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Condvar};
 
 use mio::{Poll, Events, Token, Waker, Interest};
 use mio::net::UdpSocket as MioUdpSocket;
@@ -8,11 +8,9 @@ use crossbeam::channel::Receiver;
 use bring::{Bring, WithOpt};
 
 use crate::constants::{WAKE_TOKEN, CONFIG_BUF_SIZE_BYTES};
-
-use crate::types::SharedRingBuf;
 use crate::types::ToDaemon as FromService;
 use crate::types::FromDaemon as ToService;
-use crate::state::State;
+use crate::state::{State, FSM};
 
 pub fn spawn(mut poll: Poll, _waker: Arc<Waker>, rx: Receiver<FromService>) {
   std::thread::Builder::new()
@@ -24,6 +22,7 @@ pub fn spawn(mut poll: Poll, _waker: Arc<Waker>, rx: Receiver<FromService>) {
       // Clear out all msgs from service
       loop {
         for msg in rx.try_iter() {
+          let is_listening = if let FromService::Listen(..) = msg { true } else { false };
           match msg {
             FromService::Print(msg) => {
               println!("Got msg: {}", msg);
@@ -33,8 +32,9 @@ pub fn spawn(mut poll: Poll, _waker: Arc<Waker>, rx: Receiver<FromService>) {
               println!("Got new socket: {:?}", io);
               let buf_read_vec = vec![0u8; CONFIG_BUF_SIZE_BYTES];
               let buf_write_vec = vec![0u8; CONFIG_BUF_SIZE_BYTES];
-              let buf_read: SharedRingBuf = Arc::new(Mutex::new(Bring::from_vec(buf_read_vec)));
-              let buf_write: SharedRingBuf = Arc::new(Mutex::new(Bring::from_vec(buf_write_vec)));
+              let buf_read = Arc::new(Mutex::new(Bring::from_vec(buf_read_vec)));
+              let buf_write = Arc::new(Mutex::new(Bring::from_vec(buf_write_vec)));
+              let read_cond = Arc::new(Condvar::new());
 
               // Create a mio wrapper for the socket.
               let mut conn = MioUdpSocket::from_std(io);
@@ -46,19 +46,16 @@ pub fn spawn(mut poll: Poll, _waker: Arc<Waker>, rx: Receiver<FromService>) {
               // Register this io with its token for polling
               poll.registry().register(&mut conn, token, Interest::READABLE | Interest::WRITABLE).expect("Could not register");
 
-              // Simple case: assume all sockets are connected
-              // The next step is to encode 'connection' into the state machine;
-              //  we will hang onto respond_tx until the state machine sees incoming packets
-              //  indicating a virtual connection.
-              // Instead for now, we assume an automatic always-connected virtual connection
-              // And just immediately send the read/write buffers to the user-facing connection object
-              respond_tx.send(
-                ToService::Connection(Arc::clone(&buf_read), Arc::clone(&buf_write))
-              ).expect("Could not respond with connection state");
-
               // Create new state machine for the socket. Store the state locally
-              // TODO: Initialize it as either the active_open state (connecting) or the passive_open state (listening)
-              let state = State::new(buf_read, buf_write);
+              let state = if is_listening {
+                State::init_listen(respond_tx, buf_read, buf_write, read_cond)
+              } else {
+                respond_tx.send(
+                  ToService::Connection(Arc::clone(&buf_read), Arc::clone(&buf_write), Arc::clone(&read_cond))
+                ).expect("Could not respond with connection state");
+
+                State::init_connect(buf_read, buf_write, read_cond)
+              };
 
               // Add to the list
               states.insert(token, (state, conn));
@@ -78,7 +75,19 @@ pub fn spawn(mut poll: Poll, _waker: Arc<Waker>, rx: Receiver<FromService>) {
               let mut buf = state.buf_read.lock().expect("Could not acquire unpoisoned read lock");
               match socket.recv(&mut state.buf_local) {
                 Ok(size) => {
-                  buf.push_back(&state.buf_local[..size]);
+                  // If we were listening, we now know we have a live connection to accept
+                  if let FSM::Listen{ tx } = &state.fsm {
+                    tx.send(
+                      // TODO: Since these are always sent together, bundle them under a tuple instead of 3 distinct arcs
+                      ToService::Connection(
+                        Arc::clone(&state.buf_read),
+                        Arc::clone(&state.buf_write),
+                        Arc::clone(&state.read_cond)
+                      )
+                    ).expect("Could not finish listening with connection state");
+                    state.fsm = FSM::Connected;
+                  }
+                  buf.push_back(&state.buf_local[..size]).map(|_| state.read_cond.notify_one());
                 },
                 Err(e) => {
                   if e.kind() == std::io::ErrorKind::WouldBlock {} // This is expected for nonblocking io

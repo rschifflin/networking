@@ -23,24 +23,35 @@ fn main() {
 
 fn listen(listener: gudp::Listener, buf: &mut [u8], src_port: u16, dst_port: u16) {
   // Block until a connection has been established
-  let conn = listener.accept().expect("Could not accept connection");
-
   println!("Listening on {} for messages from {}", src_port, dst_port);
+  let conn = listener.accept().expect("Could not accept connection");
+  println!("Accepted connection on {} for messages from {}", src_port, dst_port);
+
   loop {
-    let response_len = conn.recv(buf).expect("Failed to recv");
-    println!("[From {}]: {}", dst_port, std::str::from_utf8(&buf[..response_len]).expect("Did not recv utf8"));
-    conn.send(b"pong").expect("Failed to send");
-    println!("> pong");
+    let recv_len = conn.recv(buf).expect("Failed to recv");
+    let recv_str = std::str::from_utf8(&buf[..recv_len]).expect("Did not recv utf8");
+    println!("[From {}]: {}", dst_port, recv_str);
+
+    if recv_str == "ping" {
+      conn.send(b"pong").expect("Failed to send");
+      println!("> pong");
+    }
   }
 }
 
 fn ping(conn: gudp::Connection, buf: &mut [u8], src_port: u16, dst_port: u16) {
-  println!("Pinging {} from {}", dst_port, src_port);
+  println!("Sending stdin from {} to {}", src_port, dst_port);
+  let mut send_string = String::new();
+  let stdin = std::io::stdin();
+
   loop {
-    conn.send(b"ping").expect("Failed to send");
-    println!("> ping");
-    let response_len = conn.recv(buf).expect("Failed to recv");
-    println!("[From {}]: {}", dst_port, std::str::from_utf8(&buf[..response_len]).expect("Did not recv utf8"));
-    std::thread::sleep(std::time::Duration::from_millis(1000));
+    if let Some(Ok(recv_len)) = conn.try_recv(buf) {
+      println!("[From {}]: {}", dst_port, std::str::from_utf8(&buf[..recv_len]).expect("Did not recv utf8"));
+    };
+
+    send_string.clear();
+    stdin.read_line(&mut send_string).expect("Could not read stdin");
+    send_string.pop(); // To remove the newline
+    conn.send(send_string.as_bytes()).expect("Failed to send");
   }
 }

@@ -1,5 +1,5 @@
 use crossbeam::channel::Sender;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Condvar};
 use std::net::UdpSocket;
 use bring::Bring;
 
@@ -14,6 +14,6 @@ pub enum ToDaemon {
 
 #[derive(Debug)]
 pub enum FromDaemon {
-  Connection(/*BufRead*/ SharedRingBuf, /*BufWrite*/ SharedRingBuf)
+  Connection(/*BufRead*/ SharedRingBuf, /*BufWrite*/ SharedRingBuf, /*ReadCond*/ Arc<Condvar>)
 }
 
