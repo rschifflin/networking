@@ -1,9 +1,13 @@
+use std::sync::{Arc, Mutex, Condvar};
+use std::sync::atomic::AtomicUsize;
+
 use crossbeam::channel;
+
+use bring::Bring;
 
 use crate::types::SharedConnState;
 use crate::types::FromDaemon as ToService;
 use crate::constants::CONFIG_BUF_SIZE_BYTES;
-use std::sync::Arc;
 
 /// Connection state
 /// Tracks all the behavior of a given socket
@@ -19,7 +23,13 @@ pub enum FSM {
 }
 
 impl State {
-  pub fn init_connect(shared: Arc<SharedConnState>) -> State {
+  pub fn init_connect(tx: channel::Sender<ToService>) -> State {
+    let shared = State::new_shared_state();
+
+    tx.send(
+      ToService::Connection(Arc::clone(&shared))
+    ).expect("Could not respond with connection state");
+
     State {
       shared,
       buf_local: vec![0u8; CONFIG_BUF_SIZE_BYTES],
@@ -27,11 +37,21 @@ impl State {
     }
   }
 
-  pub fn init_listen(tx: channel::Sender<ToService>, shared: Arc<SharedConnState>) -> State {
+  pub fn init_listen(tx: channel::Sender<ToService>) -> State {
     State {
-      shared,
+      shared: State::new_shared_state(),
       buf_local: vec![0u8; CONFIG_BUF_SIZE_BYTES],
       fsm: FSM::Listen { tx }
     }
+  }
+
+  fn new_shared_state() -> Arc<SharedConnState> {
+    let buf_read_vec = vec![0u8; CONFIG_BUF_SIZE_BYTES];
+    let buf_write_vec = vec![0u8; CONFIG_BUF_SIZE_BYTES];
+    let buf_read = Mutex::new(Bring::from_vec(buf_read_vec));
+    let buf_write = Mutex::new(Bring::from_vec(buf_write_vec));
+    let read_cond = Condvar::new();
+    let status = AtomicUsize::new(0);
+    Arc::new((buf_read, buf_write, read_cond, status))
   }
 }

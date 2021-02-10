@@ -53,5 +53,8 @@ fn ping(conn: gudp::Connection, buf: &mut [u8], src_port: u16, dst_port: u16) {
     stdin.read_line(&mut send_string).expect("Could not read stdin");
     send_string.pop(); // To remove the newline
     conn.send(send_string.as_bytes()).expect("Failed to send");
+
+    // Brief sleep for an optional response to arrive
+    std::thread::sleep(std::time::Duration::from_millis(50));
   }
 }

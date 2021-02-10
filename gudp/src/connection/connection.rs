@@ -1,5 +1,6 @@
 use std::net::UdpSocket;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 use crossbeam::channel;
 use mio::Waker;
@@ -8,10 +9,19 @@ use crate::Service;
 use crate::types::SharedConnState;
 use crate::types::{FromDaemon, ToDaemon};
 
+use std::io;
+
 // A user-facing GUDP Connection interface
 pub struct Connection {
     waker: Arc<Waker>,
     shared: Arc<SharedConnState>
+}
+
+impl Drop for Connection {
+  fn drop(&mut self) {
+    let (_, _, _, ref status) = *self.shared;
+    status.store(1, Ordering::SeqCst);
+  }
 }
 
 impl Connection {
@@ -19,8 +29,14 @@ impl Connection {
       Connection { waker, shared }
     }
 
-    pub fn send(&self, buf: &[u8]) -> std::io::Result<usize> {
-      let (ref _buf_read, ref buf_write, ref _read_cond) = *self.shared;
+    pub fn send(&self, buf: &[u8]) -> io::Result<usize> {
+      let (ref _buf_read, ref buf_write, ref _read_cond, ref status) = *self.shared;
+      if status.load(Ordering::SeqCst) != 0 {
+        return io::Result::Err(
+          io::Error::new(io::ErrorKind::ConnectionReset, "Attempted send on closed connection")
+        );
+      }
+
       let mut buf_write = buf_write.lock().expect("Could not acquire unpoisoned write lock");
       let push_result = buf_write.push_back(buf);
       drop(buf_write);
@@ -30,15 +46,21 @@ impl Connection {
           Ok(size)
         },
         None => {
-          std::io::Result::Err(
-            std::io::Error::new(std::io::ErrorKind::WouldBlock, "Nothing to send")
+          io::Result::Err(
+            io::Error::new(io::ErrorKind::WouldBlock, "Nothing to send")
           )
         }
       }
     }
 
-    pub fn recv(&self, buf: &mut [u8]) -> std::io::Result<usize> {
-      let (ref buf_read, ref _buf_write, ref read_cond) = *self.shared;
+    pub fn recv(&self, buf: &mut [u8]) -> io::Result<usize> {
+      let (ref buf_read, ref _buf_write, ref read_cond, ref status) = *self.shared;
+      if status.load(Ordering::SeqCst) != 0 {
+        return io::Result::Err(
+          io::Error::new(io::ErrorKind::ConnectionReset, "Attempted send on closed connection")
+        );
+      }
+
       let mut buf_read = buf_read.lock().expect("Could not acquire unpoisoned read lock");
       while buf_read.count() <= 0 {
         buf_read = read_cond.wait(buf_read).expect("Could not wait on condvar");
@@ -46,22 +68,30 @@ impl Connection {
       let pop_result = buf_read.pop_front(buf);
       drop(buf_read);
       // TODO: This error might be that the buffer is just too small! Should we truncate?
-      return pop_result.map(std::io::Result::Ok).unwrap_or_else(|| {
-        std::io::Result::Err(std::io::Error::new(std::io::ErrorKind::WouldBlock, "Nothing to recv"))
+      return pop_result.map(io::Result::Ok).unwrap_or_else(|| {
+        io::Result::Err(io::Error::new(io::ErrorKind::WouldBlock, "Nothing to recv"))
       });
     }
 
-    pub fn try_recv(&self, buf: &mut [u8]) -> Option<std::io::Result<usize>> {
-      let (ref buf_read, ref _buf_write, ref _read_cond) = *self.shared;
+    pub fn try_recv(&self, buf: &mut [u8]) -> Option<io::Result<usize>> {
+      let (ref buf_read, ref _buf_write, ref _read_cond, ref status) = *self.shared;
+      if status.load(Ordering::SeqCst) != 0 {
+        return Some(
+          io::Result::Err(
+            io::Error::new(io::ErrorKind::ConnectionReset, "Attempted send on closed connection")
+          )
+        );
+      }
+
       let mut buf_read = buf_read.lock().expect("Could not acquire unpoisoned read lock");
       if buf_read.count() > 0 {
         let pop_result = buf_read.pop_front(buf);
         drop(buf_read);
-        return pop_result.map(std::io::Result::Ok).or_else(|| {
+        return pop_result.map(io::Result::Ok).or_else(|| {
           Some(
             // TODO: This error might be that the buffer is just too small! Should we truncate?
-            std::io::Result::Err(
-              std::io::Error::new(std::io::ErrorKind::WouldBlock, "Nothing to recv")
+            io::Result::Err(
+              io::Error::new(io::ErrorKind::WouldBlock, "Nothing to recv")
             )
           )
         });
