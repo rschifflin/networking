@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex, Condvar};
 use std::net::UdpSocket;
 use bring::Bring;
 
-pub type SharedRingBuf = Arc<Mutex<Bring>>;
+pub type SharedConnState = (/*BufRead*/ Mutex<Bring>, /*BufWrite*/ Mutex<Bring>, /*ReadCond*/ Condvar);
 
 #[derive(Debug)]
 pub enum ToDaemon {
@@ -14,6 +14,6 @@ pub enum ToDaemon {
 
 #[derive(Debug)]
 pub enum FromDaemon {
-  Connection(/*BufRead*/ SharedRingBuf, /*BufWrite*/ SharedRingBuf, /*ReadCond*/ Arc<Condvar>)
+  Connection(Arc<SharedConnState>)
 }
 

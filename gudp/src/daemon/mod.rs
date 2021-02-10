@@ -32,9 +32,10 @@ pub fn spawn(mut poll: Poll, _waker: Arc<Waker>, rx: Receiver<FromService>) {
               println!("Got new socket: {:?}", io);
               let buf_read_vec = vec![0u8; CONFIG_BUF_SIZE_BYTES];
               let buf_write_vec = vec![0u8; CONFIG_BUF_SIZE_BYTES];
-              let buf_read = Arc::new(Mutex::new(Bring::from_vec(buf_read_vec)));
-              let buf_write = Arc::new(Mutex::new(Bring::from_vec(buf_write_vec)));
-              let read_cond = Arc::new(Condvar::new());
+              let buf_read = Mutex::new(Bring::from_vec(buf_read_vec));
+              let buf_write = Mutex::new(Bring::from_vec(buf_write_vec));
+              let read_cond = Condvar::new();
+              let shared_state = Arc::new((buf_read, buf_write, read_cond));
 
               // Create a mio wrapper for the socket.
               let mut conn = MioUdpSocket::from_std(io);
@@ -48,13 +49,13 @@ pub fn spawn(mut poll: Poll, _waker: Arc<Waker>, rx: Receiver<FromService>) {
 
               // Create new state machine for the socket. Store the state locally
               let state = if is_listening {
-                State::init_listen(respond_tx, buf_read, buf_write, read_cond)
+                State::init_listen(respond_tx, shared_state)
               } else {
                 respond_tx.send(
-                  ToService::Connection(Arc::clone(&buf_read), Arc::clone(&buf_write), Arc::clone(&read_cond))
+                  ToService::Connection(Arc::clone(&shared_state))
                 ).expect("Could not respond with connection state");
 
-                State::init_connect(buf_read, buf_write, read_cond)
+                State::init_connect(shared_state)
               };
 
               // Add to the list
@@ -70,24 +71,20 @@ pub fn spawn(mut poll: Poll, _waker: Arc<Waker>, rx: Receiver<FromService>) {
           // We can use the token we previously provided to `register` to
           // determine for which type the event is.
           if event.token() != WAKE_TOKEN && event.is_readable() {
-            let (ref mut state, ref mut socket) = states.get_mut(&event.token()).expect("Could not look up token");
+            let (ref mut state, ref socket) = states.get_mut(&event.token()).expect("Could not look up token");
             {
-              let mut buf = state.buf_read.lock().expect("Could not acquire unpoisoned read lock");
+              let (ref buf_read, ref _buf_write, ref read_cond) = *state.shared;
+              let mut buf = buf_read.lock().expect("Could not acquire unpoisoned read lock");
               match socket.recv(&mut state.buf_local) {
                 Ok(size) => {
                   // If we were listening, we now know we have a live connection to accept
                   if let FSM::Listen{ tx } = &state.fsm {
                     tx.send(
-                      // TODO: Since these are always sent together, bundle them under a tuple instead of 3 distinct arcs
-                      ToService::Connection(
-                        Arc::clone(&state.buf_read),
-                        Arc::clone(&state.buf_write),
-                        Arc::clone(&state.read_cond)
-                      )
+                      ToService::Connection(Arc::clone(&state.shared))
                     ).expect("Could not finish listening with connection state");
                     state.fsm = FSM::Connected;
                   }
-                  buf.push_back(&state.buf_local[..size]).map(|_| state.read_cond.notify_one());
+                  buf.push_back(&state.buf_local[..size]).map(|_| read_cond.notify_one());
                 },
                 Err(e) => {
                   if e.kind() == std::io::ErrorKind::WouldBlock {} // This is expected for nonblocking io
@@ -99,8 +96,9 @@ pub fn spawn(mut poll: Poll, _waker: Arc<Waker>, rx: Receiver<FromService>) {
         };
 
         // Handle writes
-        for (_, (ref mut state, ref mut socket)) in states.iter_mut() {
-          let mut buf = state.buf_write.lock().expect("Could not acquire unpoisoned write lock");
+        for (_, (ref mut state, ref socket)) in states.iter_mut() {
+          let (ref _buf_read, ref buf_write, ref _read_cond) = *state.shared;
+          let mut buf = buf_write.lock().expect("Could not acquire unpoisoned write lock");
           let buf = &mut *buf;
           if buf.count() > 0 {
             let buf_local = &mut state.buf_local;
