@@ -22,9 +22,10 @@ impl Connection {
     pub fn send(&self, buf: &[u8]) -> std::io::Result<usize> {
       let (ref _buf_read, ref buf_write, ref _read_cond) = *self.shared;
       let mut buf_write = buf_write.lock().expect("Could not acquire unpoisoned write lock");
-      match buf_write.push_back(buf) {
+      let push_result = buf_write.push_back(buf);
+      drop(buf_write);
+      match push_result {
         Some(size) => {
-          drop(buf_write);
           self.waker.wake().expect("Could not wake"); // Wake on send to flush all writes immediately
           Ok(size)
         },
@@ -42,8 +43,10 @@ impl Connection {
       while buf_read.count() <= 0 {
         buf_read = read_cond.wait(buf_read).expect("Could not wait on condvar");
       }
-
-      return buf_read.pop_front(buf).map(std::io::Result::Ok).unwrap_or_else(|| {
+      let pop_result = buf_read.pop_front(buf);
+      drop(buf_read);
+      // TODO: This error might be that the buffer is just too small! Should we truncate?
+      return pop_result.map(std::io::Result::Ok).unwrap_or_else(|| {
         std::io::Result::Err(std::io::Error::new(std::io::ErrorKind::WouldBlock, "Nothing to recv"))
       });
     }
@@ -52,8 +55,11 @@ impl Connection {
       let (ref buf_read, ref _buf_write, ref _read_cond) = *self.shared;
       let mut buf_read = buf_read.lock().expect("Could not acquire unpoisoned read lock");
       if buf_read.count() > 0 {
-        return buf_read.pop_front(buf).map(std::io::Result::Ok).or_else(|| {
+        let pop_result = buf_read.pop_front(buf);
+        drop(buf_read);
+        return pop_result.map(std::io::Result::Ok).or_else(|| {
           Some(
+            // TODO: This error might be that the buffer is just too small! Should we truncate?
             std::io::Result::Err(
               std::io::Error::new(std::io::ErrorKind::WouldBlock, "Nothing to recv")
             )
