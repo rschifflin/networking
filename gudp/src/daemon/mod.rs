@@ -9,7 +9,7 @@ use crossbeam::channel::Receiver;
 use crate::constants::WAKE_TOKEN;
 use crate::types::ToDaemon as FromService;
 use crate::state::State;
-use crate::hashmap_ext;
+use crate::hashmap_ext::HashMapExt;
 
 mod service_event;
 mod read_event;
@@ -43,7 +43,7 @@ pub fn spawn(mut poll: Poll, _waker: Arc<Waker>, rx: Receiver<FromService>) {
         };
 
         // Handle writes
-        for key in hashmap_ext::keys_iter(&states, &mut states_keybuf) {
+        for key in states.keys_ext(&mut states_keybuf) {
           if let Entry::Occupied(entry) = states.entry(key) {
             write_event::handle(entry, &mut poll);
           }

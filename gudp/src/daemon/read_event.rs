@@ -34,7 +34,7 @@ pub fn handle(mut entry: OccupiedEntry<Token, (State, MioUdpSocket)>, poll: &Pol
 
   match socket.recv(&mut state.buf_local) {
     Ok(size) => {
-      //NOTE: The consensus _seems_ to be that we should notify the condvar while still holding the lock
+      //NOTE: The consensus _seems_ to be that we should notify the condvar while still holding the lock as opposed to releasing the lock first then notifying
       buf.push_back(&state.buf_local[..size]).map(|_| read_cond.notify_one());
       drop(buf);
 
