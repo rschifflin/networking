@@ -4,12 +4,30 @@ use std::sync::Arc;
 use mio::{Poll, Token};
 use mio::net::UdpSocket as MioUdpSocket;
 
-use crate::types::FromDaemon as ToService;
-use crate::state::{State, FSM};
+use bring::Bring;
 
-pub fn handle(mut entry: OccupiedEntry<Token, (State, MioUdpSocket)>, poll: &Poll) {
+use crate::types::FromDaemon as ToService;
+use crate::types::READ_BUFFER_TAG;
+use crate::state::{State, FSM};
+use crate::sync::CondMutexGuard;
+
+type StateEntry<'a> = OccupiedEntry<'a, Token, (State, MioUdpSocket)>;
+
+// Only call when you're sure status.is_closed() is true!
+// Otherwise notified readers might sleep again. See the caveat note below
+fn close_remote_socket<'a>(
+  poll: &'a Poll,
+  socket: &'a mut MioUdpSocket,
+  cond_lock: CondMutexGuard<Bring, READ_BUFFER_TAG>
+) {
+  cond_lock.notify_all();
+  drop(cond_lock);
+  poll.registry().deregister(socket).expect("Could not deregister");
+}
+
+pub fn handle(mut entry: StateEntry, poll: &Poll) {
   let (ref mut state, ref mut socket) = entry.get_mut();
-  let (ref buf_read, ref _buf_write, ref read_cond, ref status) = *state.shared;
+  let (ref buf_read, ref _buf_write, ref status) = *state.shared;
 
   let mut buf = buf_read.lock().expect("Could not acquire unpoisoned read lock");
 
@@ -25,17 +43,14 @@ pub fn handle(mut entry: OccupiedEntry<Token, (State, MioUdpSocket)>, poll: &Pol
   // Alternatively, if the client acquired the readlock first, it will sleep on the condvar before this fn can notify.
   // Thus ensuring it will hear the notification to wake up and observe the closed status.
   if status.is_closed() {
-    read_cond.notify_all();
-    drop(buf);
-    poll.registry().deregister(socket).expect("Could not deregister");
+    close_remote_socket(poll, socket, buf);
     entry.remove();
     return;
   }
 
   match socket.recv(&mut state.buf_local) {
     Ok(size) => {
-      //NOTE: The consensus _seems_ to be that we should notify the condvar while still holding the lock as opposed to releasing the lock first then notifying
-      buf.push_back(&state.buf_local[..size]).map(|_| read_cond.notify_one());
+      buf.push_back(&state.buf_local[..size]).map(|_| buf.notify_one());
       drop(buf);
 
       // If we were listening, we now know we have a live connection to accept
@@ -51,9 +66,12 @@ pub fn handle(mut entry: OccupiedEntry<Token, (State, MioUdpSocket)>, poll: &Pol
     // and notify all sleepers BEFORE dropping the readlock. It is important that we synchronize with the readlock
     // for the reasons explained above. Then we can deregister as usual
     Err(e) => {
-      drop(buf);
       if e.kind() == std::io::ErrorKind::WouldBlock {} // This is fine for mio
-      else {} // Handle bad errors here!
+      else { // TODO: Handle errors explicitly. Set remote drop flags based on errorkind
+        status.set_remote_drop();
+        close_remote_socket(poll, socket, buf);
+        entry.remove();
+      }
     }
   }
 }

@@ -1,14 +1,17 @@
 use crossbeam::channel::Sender;
-use std::sync::{Arc, Mutex, Condvar};
+use std::sync::{Arc, Mutex};
 use std::net::UdpSocket;
 use bring::Bring;
 
+use crate::sync::CondMutex;
 use crate::state::Status;
 
+#[allow(non_camel_case_types)]
+pub type READ_BUFFER_TAG = ();
+
 pub type SharedConnState = (
-  /*BufRead*/   Mutex<Bring>,
+  /*BufRead*/   CondMutex<Bring, READ_BUFFER_TAG>,
   /*BufWrite*/  Mutex<Bring>,
-  /*ReadCond*/  Condvar,
   /*Status*/    Status
 );
 

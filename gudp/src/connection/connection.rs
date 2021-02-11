@@ -13,13 +13,13 @@ use std::io;
 
 // A user-facing GUDP Connection interface
 pub struct Connection {
-    waker: Arc<Waker>,
-    shared: Arc<SharedConnState>
+  waker: Arc<Waker>,
+  shared: Arc<SharedConnState>
 }
 
 impl Drop for Connection {
   fn drop(&mut self) {
-    let (_, _, _, ref status) = *self.shared;
+    let (_, _, ref status) = *self.shared;
     status.set_local_drop();
   }
 }
@@ -30,7 +30,7 @@ impl Connection {
     }
 
     pub fn send(&self, buf: &[u8]) -> io::Result<usize> {
-      let (ref _buf_read, ref buf_write, ref _read_cond, ref status) = *self.shared;
+      let (ref _buf_read, ref buf_write, ref status) = *self.shared;
       if status.is_closed() { return Err(error::send_on_closed()); }
 
       let mut buf_write = buf_write.lock().map_err(error::poisoned_write_lock)?;
@@ -46,10 +46,10 @@ impl Connection {
     }
 
     pub fn recv(&self, buf: &mut [u8]) -> io::Result<usize> {
-      let (ref buf_read, ref _buf_write, ref read_cond, ref status) = *self.shared;
+      let (ref buf_read, ref _buf_write, ref status) = *self.shared;
       let mut buf_read = buf_read.lock().map_err(error::poisoned_read_lock)?;
       while buf_read.count() <= 0 && status.is_open() {
-        buf_read = read_cond.wait(buf_read).map_err(error::poisoned_read_lock)?
+        buf_read = buf_read.wait().map_err(error::poisoned_read_lock)?
       }
 
       // We arrive here only if the read buffer has data or the status is closed.
@@ -65,7 +65,7 @@ impl Connection {
       let pop_result = buf_read.pop_front(buf);
 
       // Finished all contentious reading; signal the next reader if needed then drop the lock
-      if buf_read.count() > 0 { read_cond.notify_one(); }
+      if buf_read.count() > 0 { buf_read.notify_one(); }
       drop(buf_read);
 
       // NOTE: Pop result is only None when there are no reads (not happening here)
@@ -78,7 +78,7 @@ impl Connection {
 
     // Much simpler case since its nonblocking nature means we never worry about the condvar
     pub fn try_recv(&self, buf: &mut [u8]) -> Option<io::Result<usize>> {
-      let (ref buf_read, ref _buf_write, ref _read_cond, ref status) = *self.shared;
+      let (ref buf_read, ref _buf_write, ref status) = *self.shared;
       buf_read.lock().map_err(error::poisoned_read_lock).and_then(|mut buf_read| {
         if buf_read.count() > 0 {
           let pop_result = buf_read.pop_front(buf);

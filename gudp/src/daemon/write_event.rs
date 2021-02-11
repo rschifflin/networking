@@ -9,7 +9,7 @@ use crate::state::State;
 
 pub fn handle(mut entry: OccupiedEntry<Token, (State, MioUdpSocket)>, _poll: &Poll) {
   let (ref mut state, ref mut socket) = entry.get_mut();
-  let (ref _buf_read, ref buf_write, ref _read_cond, ref _status) = *state.shared;
+  let (ref _buf_read, ref buf_write, ref _status) = *state.shared;
 
   // NOTE: Unlike the READ case, WRITEs never sleep on a condvar. If a write would overflow the write buffer, we
   // return an Err::WriteZero immediately instead.
