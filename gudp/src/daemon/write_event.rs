@@ -7,22 +7,18 @@ use bring::WithOpt;
 
 use crate::state::State;
 
-pub fn handle(mut entry: OccupiedEntry<Token, (State, MioUdpSocket)>, poll: &Poll) {
+pub fn handle(mut entry: OccupiedEntry<Token, (State, MioUdpSocket)>, _poll: &Poll) {
   let (ref mut state, ref mut socket) = entry.get_mut();
-  let (ref _buf_read, ref buf_write, ref _read_cond, ref status) = *state.shared;
+  let (ref _buf_read, ref buf_write, ref _read_cond, ref _status) = *state.shared;
 
   // NOTE: Unlike the READ case, WRITEs never sleep on a condvar. If a write would overflow the write buffer, we
   // return an Err::WriteZero immediately instead.
   // One open question is SHOULD we add a block-on-write interface? (Leaning towards yes for completeness)
   // Doing so would add another condvar and require us to acquire BOTH the read+write locks before deregistering,
   // signalling both condvars.
-  // In any case, it's safe to simply deregister here without any notify calls or acquiring any locks
-  if status.is_closed() {
-    poll.registry().deregister(socket).expect("Could not deregister");
-    entry.remove();
-    return;
-  }
 
+  // TODO: Acquire read lock and check if the socket is closed to perform a deregister.
+  // TODO: Loop thru and write the entire buffer until a WOULDBLOCK or some socket error
   let mut buf = buf_write.lock().expect("Could not acquire unpoisoned write lock");
 
   let buf = &mut *buf;
