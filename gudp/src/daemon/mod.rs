@@ -27,11 +27,11 @@ pub fn spawn(mut poll: Poll, _waker: Arc<Waker>, rx: Receiver<FromService>) {
 
       // Clear out all msgs from service
       loop {
+        poll.poll(&mut events, None).expect("Could not poll");
+
         for msg in rx.try_iter() {
           service_event::handle(msg, &poll, &mut states, &mut next_conn_id);
         }
-
-        poll.poll(&mut events, None).expect("Could not poll");
 
         // Handle reads
         for event in events.iter() {

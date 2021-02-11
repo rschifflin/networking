@@ -1,10 +1,16 @@
 use crossbeam::channel::Sender;
 use std::sync::{Arc, Mutex, Condvar};
-use std::sync::atomic::AtomicUsize;
 use std::net::UdpSocket;
 use bring::Bring;
 
-pub type SharedConnState = (/*BufRead*/ Mutex<Bring>, /*BufWrite*/ Mutex<Bring>, /*ReadCond*/ Condvar, /*Status*/ AtomicUsize);
+use crate::state::Status;
+
+pub type SharedConnState = (
+  /*BufRead*/   Mutex<Bring>,
+  /*BufWrite*/  Mutex<Bring>,
+  /*ReadCond*/  Condvar,
+  /*Status*/    Status
+);
 
 #[derive(Debug)]
 pub enum ToDaemon {

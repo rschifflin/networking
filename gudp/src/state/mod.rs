@@ -9,6 +9,9 @@ use crate::types::SharedConnState;
 use crate::types::FromDaemon as ToService;
 use crate::constants::CONFIG_BUF_SIZE_BYTES;
 
+pub use status::Status;
+mod status;
+
 /// Connection state
 /// Tracks all the behavior of a given socket
 pub struct State {
@@ -51,7 +54,7 @@ impl State {
     let buf_read = Mutex::new(Bring::from_vec(buf_read_vec));
     let buf_write = Mutex::new(Bring::from_vec(buf_write_vec));
     let read_cond = Condvar::new();
-    let status = AtomicUsize::new(0);
+    let status = Status::new(AtomicUsize::new(0));
     Arc::new((buf_read, buf_write, read_cond, status))
   }
 }

@@ -1,5 +1,4 @@
 use std::collections::hash_map::OccupiedEntry;
-use std::sync::atomic::Ordering;
 
 use mio::{Poll, Token};
 use mio::net::UdpSocket as MioUdpSocket;
@@ -12,7 +11,13 @@ pub fn handle(mut entry: OccupiedEntry<Token, (State, MioUdpSocket)>, poll: &Pol
   let (ref mut state, ref mut socket) = entry.get_mut();
   let (ref _buf_read, ref buf_write, ref _read_cond, ref status) = *state.shared;
 
-  if status.load(Ordering::SeqCst) != 0 {
+  // NOTE: Unlike the READ case, WRITEs never sleep on a condvar. If a write would overflow the write buffer, we
+  // return an Err::WriteZero immediately instead.
+  // One open question is SHOULD we add a block-on-write interface? (Leaning towards yes for completeness)
+  // Doing so would add another condvar and require us to acquire BOTH the read+write locks before deregistering,
+  // signalling both condvars.
+  // In any case, it's safe to simply deregister here without any notify calls or acquiring any locks
+  if status.is_closed() {
     poll.registry().deregister(socket).expect("Could not deregister");
     entry.remove();
     return;
