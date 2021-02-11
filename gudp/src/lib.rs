@@ -1,10 +1,11 @@
 mod connection;
+mod constants;
+mod daemon;
+mod error;
+mod hashmap_ext;
 mod service;
 mod state;
 mod types;
-mod constants;
-mod daemon;
-mod hashmap_ext;
 
 pub use connection::{Connection, connect, Listener, listen};
 pub use service::Service;
