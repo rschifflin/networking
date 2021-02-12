@@ -4,5 +4,6 @@ members = [
   "gudp-client",
   "gudp",
   "slice-pair",
-  "bring"
+  "bring",
+  "xor"
 ]

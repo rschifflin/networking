@@ -1,0 +1,18 @@
+warning: unused variable: `hold_right`
+  --> $DIR/test_xor.rs:10:7
+   |
+10 |   let hold_right = xor.rhs();
+   |       ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_hold_right`
+   |
+   = note: `#[warn(unused_variables)]` on by default
+
+error[E0499]: cannot borrow `xor` as mutable more than once at a time
+  --> $DIR/test_xor.rs:10:20
+   |
+9  |   let hold_left = xor.lhs();
+   |                   --- first mutable borrow occurs here
+10 |   let hold_right = xor.rhs();
+   |                    ^^^ second mutable borrow occurs here
+11 |
+12 |   println!("Left: {:?}", hold_left.as_slice());
+   |                          --------- first borrow later used here

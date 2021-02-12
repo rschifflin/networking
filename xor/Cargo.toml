@@ -1,0 +1,10 @@
+[package]
+name = "xor"
+version = "0.1.0"
+authors = ["Mark Schifflin <randy.schifflin@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dev-dependencies]
+trybuild = "1.0"

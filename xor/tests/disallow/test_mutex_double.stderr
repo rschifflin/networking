@@ -1,0 +1,11 @@
+error[E0499]: cannot borrow `xor` as mutable more than once at a time
+  --> $DIR/test_mutex_double.rs:13:17
+   |
+10 |   let mut lhs = xor.lhs().lock().unwrap();
+   |                 --- first mutable borrow occurs here
+...
+13 |   let mut rhs = xor.rhs().lock().unwrap();
+   |                 ^^^ second mutable borrow occurs here
+14 |   *rhs = true;
+15 | }
+   | - first borrow might be used here, when `lhs` is dropped and runs the `Drop` code for type `MutexGuard`
