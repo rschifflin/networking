@@ -13,8 +13,8 @@ fn main() {
   let mut response_buffer = [0u8; 1000];
   let service = gudp::Service::initialize();
   if let Some("-l") = args.next().as_deref() {
-    let listener = gudp::listen(&service, socket);
-    listen(listener, &mut response_buffer, src_port, dst_port)
+    let listener = gudp::listen(&service, socket).expect("Could not start listener");
+    listen(listener, &mut response_buffer, src_port, dst_port);
   } else {
     let connection = gudp::connect(&service, socket).expect("Could not connect gudp");
     ping(connection, &mut response_buffer, src_port, dst_port)
