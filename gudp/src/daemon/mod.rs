@@ -11,6 +11,7 @@ use crate::types::ToDaemon as FromService;
 use crate::state::State;
 use crate::hashmap_ext::HashMapExt;
 
+mod poll;
 mod service_event;
 mod read_event;
 mod write_event;

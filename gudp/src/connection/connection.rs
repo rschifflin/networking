@@ -20,7 +20,7 @@ pub struct Connection {
 impl Drop for Connection {
   fn drop(&mut self) {
     let (_, _, ref status) = *self.shared;
-    status.set_local_drop();
+    status.set_client_hup();
   }
 }
 
@@ -31,7 +31,7 @@ impl Connection {
 
     pub fn send(&self, buf: &[u8]) -> io::Result<usize> {
       let (ref _buf_read, ref buf_write, ref status) = *self.shared;
-      if status.is_closed() { return Err(error::send_on_closed()); }
+      status.check_client()?;
 
       let mut buf_write = buf_write.lock().map_err(error::poisoned_write_lock)?;
       let push_result = buf_write.push_back(buf);
@@ -48,8 +48,11 @@ impl Connection {
     pub fn recv(&self, buf: &mut [u8]) -> io::Result<usize> {
       let (ref buf_read, ref _buf_write, ref status) = *self.shared;
       let mut buf_read = buf_read.lock().map_err(error::poisoned_read_lock)?;
-      while buf_read.count() <= 0 && status.is_open() {
-        buf_read = buf_read.wait().map_err(error::poisoned_read_lock)?
+
+      let mut health = status.check_client();
+      while buf_read.count() <= 0 && health.is_ok() {
+        buf_read = buf_read.wait().map_err(error::poisoned_read_lock)?;
+        health = status.check_client();
       }
 
       // We arrive here only if the read buffer has data or the status is closed.
@@ -58,7 +61,9 @@ impl Connection {
       // NOTE: UNLIKE the case where buf_read has data, the daemon calls notify_all() when a conn is closed.
       // This means every thread will wake up, observe the conn is closed, break its loop and arrive here.
       // Noticeably, they will NEVER sleep on the condvar and NEVER need to be signalled again. So we don't need to notify_one() here.
-      if buf_read.count() <= 0 { return Err(error::recv_on_closed()); }
+      if buf_read.count() <= 0 {
+        health.and_then(|_| Err(error::unknown()))?;
+      }
 
       // We arrive here only if the read buffer has data. We don't care about the connection state until the
       // read buffer has been drained.
@@ -87,10 +92,8 @@ impl Connection {
             Some(size) => Ok(Some(size)),
             None => Err(error::no_space_to_read())
           }
-        } else if status.is_closed() {
-          return Err(error::recv_on_closed());
         } else {
-          Ok(None)
+          status.check_client().map(|_| None)
         }
       }).transpose()
     }

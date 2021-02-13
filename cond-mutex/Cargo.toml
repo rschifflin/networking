@@ -1,5 +1,5 @@
 [package]
-name = "gudp"
+name = "cond-mutex"
 version = "0.1.0"
 authors = ["Mark Schifflin <randy.schifflin@gmail.com>"]
 edition = "2018"
@@ -7,8 +7,3 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-crossbeam = "0.8.0"
-byteorder = "1"
-bring = { path = "../bring" }
-cond-mutex = { path = "../cond-mutex" }
-mio = {version = "0.7.7", features = ["net", "os-poll"] }

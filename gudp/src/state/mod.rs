@@ -1,6 +1,4 @@
 use std::sync::{Arc, Mutex};
-use std::sync::atomic::AtomicUsize;
-
 use crossbeam::channel;
 
 use bring::Bring;
@@ -8,7 +6,7 @@ use bring::Bring;
 use crate::types::SharedConnState;
 use crate::types::FromDaemon as ToService;
 use crate::constants::CONFIG_BUF_SIZE_BYTES;
-use crate::sync::CondMutex;
+use cond_mutex::CondMutex;
 
 pub use status::Status;
 mod status;
@@ -54,7 +52,7 @@ impl State {
     let buf_write_vec = vec![0u8; CONFIG_BUF_SIZE_BYTES];
     let buf_read = CondMutex::new(Bring::from_vec(buf_read_vec));
     let buf_write = Mutex::new(Bring::from_vec(buf_write_vec));
-    let status = Status::new(AtomicUsize::new(0));
+    let status = Status::new();
     Arc::new((buf_read, buf_write, status))
   }
 }

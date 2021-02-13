@@ -22,12 +22,12 @@ pub fn no_space_to_read() -> io::Error {
   io::Error::new(io::ErrorKind::UnexpectedEof, "Not enough space to read entire packet")
 }
 
-pub fn send_on_closed() -> io::Error {
-  io::Error::new(io::ErrorKind::ConnectionReset, "Attempted send on closed connection")
+pub fn use_after_hup() -> io::Error {
+  io::Error::new(io::ErrorKind::ConnectionReset, "Attempted to use after graceful close.")
 }
 
-pub fn recv_on_closed() -> io::Error {
-  io::Error::new(io::ErrorKind::ConnectionReset, "Attempted recv on closed connection")
+pub fn unknown() -> io::Error {
+  io::Error::new(io::ErrorKind::Other, "An unknown IO error occured")
 }
 
 pub fn cannot_send_to_daemon<T: 'static + Sync + Send>(reason: SendError<T>) -> io::Error {

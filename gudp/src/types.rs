@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use std::net::UdpSocket;
 use bring::Bring;
 
-use crate::sync::CondMutex;
+use cond_mutex::CondMutex;
 use crate::state::Status;
 
 #[allow(non_camel_case_types)]
@@ -12,7 +12,9 @@ pub type READ_BUFFER_TAG = ();
 pub type SharedConnState = (
   /*BufRead*/   CondMutex<Bring, READ_BUFFER_TAG>,
   /*BufWrite*/  Mutex<Bring>,
-  /*Status*/    Status
+
+  // Atomics
+  /*Status*/      Status,
 );
 
 #[derive(Debug)]

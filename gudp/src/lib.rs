@@ -5,7 +5,6 @@ mod error;
 mod hashmap_ext;
 mod service;
 mod state;
-mod sync;
 mod types;
 
 pub use connection::{Connection, connect, Listener, listen};
