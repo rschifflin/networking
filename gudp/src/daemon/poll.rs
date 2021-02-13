@@ -2,6 +2,7 @@ use std::io;
 use std::collections::HashMap;
 use std::net::UdpSocket as StdUdpSocket;
 
+use log::warn;
 use mio::{Poll, Token, Interest};
 use mio::net::UdpSocket as MioUdpSocket;
 
@@ -21,7 +22,14 @@ pub fn close_remote_socket<'a>(
 ) {
   cond_lock.notify_all();
   drop(cond_lock);
-  poll.registry().deregister(socket).expect("Could not deregister");
+
+  // If the deregister fails, we'll silently leak the file descriptor
+  // For now, simply log if this occurs.
+  // TODO: We could bubble up hanging resources to the main loop,
+  // where we iterate on trying to deregister them.
+  poll.registry().deregister(socket).unwrap_or_else(|e| {
+    warn!("Unable to deregister socket from poll on close. The socket fd may leak! Reason: {}", e);
+  });
 }
 
 pub fn handle_failure(e: io::Error, states: &mut HashMap<Token, (State, MioUdpSocket)>) -> io::Error {

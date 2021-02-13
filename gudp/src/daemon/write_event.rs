@@ -48,7 +48,7 @@ pub fn handle(mut entry: OccupiedEntry<Token, (State, MioUdpSocket)>, poll: &Pol
         // Add error flags we can set when we have a semantic error that has no underlying errno code.
         let errno = e.raw_os_error();
 
-        // Needed to sync blocked readers before signalling that the connection is closed
+        // NOTE: Needed to sync blocked readers before signalling that the connection is closed
         let lock = buf_read.lock().expect("Could not acquire unpoisoned read lock");
 
         status.set_io_err(errno);

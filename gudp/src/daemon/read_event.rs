@@ -27,7 +27,7 @@ pub fn handle(mut entry: StateEntry, poll: &Poll) {
   // time3|thread1: this fn observes the closed status and signals the condvar to wake all _current_ sleepers
   // time4|thread0: ... and then client sleeps, oblivious to the change in status and condvar signal
   // Since after this notify_all, no future notifications are coming, client would sleep forever!
-  // The solution is to prevent client0 from acquiring the readlock until this fn observes the closed status.
+  // The solution is to prevent the client from acquiring the readlock until this fn observes the closed status.
   // That means when the client DOES acquire the readlock, it will observe a closed status and not sleep.
   // Alternatively, if the client acquired the readlock first, it will sleep on the condvar before this fn can notify.
   // Thus ensuring it will hear the notification to wake up and observe the closed status.
@@ -63,9 +63,6 @@ pub fn handle(mut entry: StateEntry, poll: &Poll) {
       }
     },
 
-    // TODO: If a fatal connection error happens, we must call status.set_remote_drop(),
-    // and notify all sleepers BEFORE dropping the readlock. It is important that we synchronize with the readlock
-    // for the reasons explained above. Then we can deregister as usual
     Err(e) => {
       if e.kind() == std::io::ErrorKind::WouldBlock {} // This is fine for mio
       else {
