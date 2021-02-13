@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use std::sync::Arc;
+use std::io;
+use std::thread;
 
 use mio::{Poll, Events, Token, Waker};
 use mio::net::UdpSocket as MioUdpSocket;
@@ -16,10 +18,10 @@ mod service_event;
 mod read_event;
 mod write_event;
 
-pub fn spawn(mut poll: Poll, _waker: Arc<Waker>, rx: Receiver<FromService>) {
-  std::thread::Builder::new()
+pub fn spawn(mut poll: Poll, _waker: Arc<Waker>, rx: Receiver<FromService>) -> io::Result<thread::JoinHandle<io::Error>> {
+  thread::Builder::new()
     .name("gudp daemon".to_string())
-    .spawn(move || {
+    .spawn(move || -> io::Error {
       let mut events = Events::with_capacity(2); // 128 connections ought to be enough for anybody
       let mut next_conn_id = 1;
       let mut states: HashMap<Token, (State, MioUdpSocket)> = HashMap::new();
@@ -27,30 +29,32 @@ pub fn spawn(mut poll: Poll, _waker: Arc<Waker>, rx: Receiver<FromService>) {
       let mut states_keybuf: Vec<Token> = vec![];
       let timer = std::time::Duration::from_millis(100);
       loop {
-        poll.poll(&mut events, Some(timer)).expect("Could not poll");
-
-        // Clear out all msgs from service
-        for msg in rx.try_iter() {
-          service_event::handle(msg, &poll, &mut states, &mut next_conn_id);
-        }
-
-        // Handle reads
-        for event in events.iter() {
-          if event.token() != WAKE_TOKEN && event.is_readable() {
-            if let Entry::Occupied(entry) = states.entry(event.token()) {
-              read_event::handle(entry, &mut poll);
+        match poll.poll(&mut events, Some(timer)) {
+          Ok(()) => {
+            // Clear out all msgs from service
+            for msg in rx.try_iter() {
+              service_event::handle(msg, &poll, &mut states, &mut next_conn_id);
             }
-          }
-        };
 
-        // Handle writes
-        for key in states.keys_ext(&mut states_keybuf) {
-          if let Entry::Occupied(entry) = states.entry(key) {
-            write_event::handle(entry, &mut poll);
-          }
+            // Handle reads
+            for event in events.iter() {
+              if event.token() != WAKE_TOKEN && event.is_readable() {
+                if let Entry::Occupied(entry) = states.entry(event.token()) {
+                  read_event::handle(entry, &mut poll);
+                }
+              }
+            };
+
+            // Handle writes
+            for key in states.keys_ext(&mut states_keybuf) {
+              if let Entry::Occupied(entry) = states.entry(key) {
+                write_event::handle(entry, &mut poll);
+              }
+            }
+          },
+          Err(e) => return poll::handle_failure(e, &mut states)
         }
       }
     })
-    .expect("Could not spawn daemon");
 }
 

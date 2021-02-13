@@ -19,9 +19,8 @@ pub type SharedConnState = (
 
 #[derive(Debug)]
 pub enum ToDaemon {
-  Print(&'static str),
   Listen(UdpSocket, Sender<FromDaemon>),
-  Connect(UdpSocket, Sender<FromDaemon>),
+  Connect(UdpSocket, Sender<FromDaemon>)
 }
 
 #[derive(Debug)]

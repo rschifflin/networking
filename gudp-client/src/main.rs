@@ -11,7 +11,7 @@ fn main() {
   socket.set_nonblocking(true).expect("Could not set nonblocking!");
 
   let mut response_buffer = [0u8; 1000];
-  let service = gudp::Service::initialize();
+  let service = gudp::Service::initialize().expect("Could not initialize gudp service");
   if let Some("-l") = args.next().as_deref() {
     let listener = gudp::listen(&service, socket).expect("Could not start listener");
     listen(listener, &mut response_buffer, src_port, dst_port);
