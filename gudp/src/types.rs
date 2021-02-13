@@ -26,6 +26,6 @@ pub enum ToDaemon {
 
 #[derive(Debug)]
 pub enum FromDaemon {
+  IORegistered,
   Connection(Arc<SharedConnState>)
 }
-

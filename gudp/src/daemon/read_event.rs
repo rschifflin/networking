@@ -14,6 +14,10 @@ pub fn handle(mut entry: StateEntry, poll: &Poll) {
   let (ref mut state, ref mut socket) = entry.get_mut();
   let (ref buf_read, ref _buf_write, ref status) = *state.shared;
 
+  // TODO: Should we handle a poisoned lock state here? IE if a thread with a connection panics,
+  // what should the daemon do about it? Just close the connection?
+  // Likely the client should panic on poison, and the daemon should recover the lock and close the conn on poison
+  // For now just panic
   let mut buf = buf_read.lock().expect("Could not acquire unpoisoned read lock");
 
   // NOTE: This status check must be done while holding the readlock to ensure no races occur of the form:
@@ -35,15 +39,27 @@ pub fn handle(mut entry: StateEntry, poll: &Poll) {
 
   match socket.recv(&mut state.buf_local) {
     Ok(size) => {
-      buf.push_back(&state.buf_local[..size]).map(|_| buf.notify_one());
-      drop(buf);
+      match &state.fsm {
+        FSM::Listen { tx } => {
+          match tx.send(ToService::Connection(Arc::clone(&state.shared))) {
+            Ok(_) => {
+              buf.push_back(&state.buf_local[..size]).map(|_| buf.notify_one());
+              state.fsm = FSM::Connected;
+            },
+            Err(_) => {
+              // Failed to create the listener connection. Deregister
 
-      // If we were listening, we now know we have a live connection to accept
-      if let FSM::Listen{ tx } = &state.fsm {
-        tx.send(
-          ToService::Connection(Arc::clone(&state.shared))
-        ).expect("Could not finish listening with connection state");
-        state.fsm = FSM::Connected;
+              // NOTE: Technically not necessary, there is no clientside to observe this
+              status.set_client_hup();
+              poll::close_remote_socket(poll, socket, buf);
+              entry.remove();
+            }
+          };
+        },
+        FSM::Connected => {
+          buf.push_back(&state.buf_local[..size]).map(|_| buf.notify_one());
+          drop(buf);
+        }
       }
     },
 

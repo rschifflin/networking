@@ -25,18 +25,16 @@ pub enum FSM {
 }
 
 impl State {
-  pub fn init_connect(tx: channel::Sender<ToService>) -> State {
+  // Returns None if unable to send the connection out to the client
+  pub fn init_connect(tx: channel::Sender<ToService>) -> Option<State> {
     let shared = State::new_shared_state();
-
-    tx.send(
-      ToService::Connection(Arc::clone(&shared))
-    ).expect("Could not respond with connection state");
-
-    State {
-      shared,
-      buf_local: vec![0u8; CONFIG_BUF_SIZE_BYTES],
-      fsm: FSM::Connected
-    }
+    tx.send(ToService::Connection(Arc::clone(&shared))).map(|_| {
+      State {
+        shared,
+        buf_local: vec![0u8; CONFIG_BUF_SIZE_BYTES],
+        fsm: FSM::Connected
+      }
+    }).ok()
   }
 
   pub fn init_listen(tx: channel::Sender<ToService>) -> State {

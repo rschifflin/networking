@@ -25,11 +25,11 @@ pub fn spawn(mut poll: Poll, _waker: Arc<Waker>, rx: Receiver<FromService>) {
       let mut states: HashMap<Token, (State, MioUdpSocket)> = HashMap::new();
       // NOTE: This is a pre-emptive alloc to ease the burden of iterating over a mutable hashmap
       let mut states_keybuf: Vec<Token> = vec![];
-
-      // Clear out all msgs from service
+      let timer = std::time::Duration::from_millis(100);
       loop {
-        poll.poll(&mut events, None).expect("Could not poll");
+        poll.poll(&mut events, Some(timer)).expect("Could not poll");
 
+        // Clear out all msgs from service
         for msg in rx.try_iter() {
           service_event::handle(msg, &poll, &mut states, &mut next_conn_id);
         }

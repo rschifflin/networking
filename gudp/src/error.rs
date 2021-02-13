@@ -37,3 +37,11 @@ pub fn cannot_send_to_daemon<T: 'static + Sync + Send>(reason: SendError<T>) -> 
 pub fn cannot_recv_from_daemon(reason: RecvError) -> io::Error {
   io::Error::new(io::ErrorKind::BrokenPipe, reason)
 }
+
+pub fn unexpected_recv_from_daemon() -> io::Error {
+  io::Error::new(io::ErrorKind::BrokenPipe, "Daemon communicated unexpected message while attempting to recv")
+}
+
+pub fn cannot_register_with_daemon() -> io::Error {
+  io::Error::new(io::ErrorKind::BrokenPipe, "Daemon failed to acknowledge io registration")
+}

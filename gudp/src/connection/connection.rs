@@ -108,8 +108,23 @@ pub fn connect(service: &Service, socket: UdpSocket) -> io::Result<Connection> {
   // Force daemon to handle this new connection immediately
   waker.wake().map_err(error::wake_failed)?;
 
-  match rx.recv() {
-    Ok(FromDaemon::Connection(shared)) => Ok(Connection::new(waker, shared)),
-    Err(e) => Err(error::cannot_recv_from_daemon(e))
-  }
+  // Expect IORegistered followd by Connection.
+  // Close any spurious connections and reject any other ordering
+  rx.recv()
+    .map_err(error::cannot_recv_from_daemon)
+    .and_then(|res1| match res1 {
+      FromDaemon::IORegistered => Ok(waker),
+      FromDaemon::Connection(shared) => {
+        drop(Connection::new(waker, shared));
+        Err(error::unexpected_recv_from_daemon())
+      }
+    })
+    .and_then(|waker| {
+      rx.recv()
+        .map_err(error::cannot_recv_from_daemon)
+        .and_then(|res2| match res2 {
+          FromDaemon::IORegistered => Err(error::unexpected_recv_from_daemon()),
+          FromDaemon::Connection(shared) => Ok(Connection::new(waker, shared))
+        })
+    })
 }
