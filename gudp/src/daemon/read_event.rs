@@ -1,18 +1,21 @@
 use std::collections::hash_map::OccupiedEntry;
+use std::net::SocketAddr;
 use std::sync::Arc;
 use std::io;
-
 use mio::{Poll, Token};
 use mio::net::UdpSocket as MioUdpSocket;
 
 use crate::types::FromDaemon as ToService;
 use crate::state::{State, FSM};
 use crate::daemon::poll;
+use crate::error;
 
-type StateEntry<'a> = OccupiedEntry<'a, Token, (State, MioUdpSocket)>;
+type TokenEntry<'a> = OccupiedEntry<'a, Token, (MioUdpSocket, SocketAddr)>;
+type StateEntry<'a> = OccupiedEntry<'a, SocketAddr, State>;
 
-pub fn handle(mut entry: StateEntry, poll: &Poll) {
-  let (ref mut state, ref mut socket) = entry.get_mut();
+pub fn handle(mut token_entry: TokenEntry, mut state_entry: StateEntry, poll: &Poll) {
+  let (ref mut socket, ref _addr) = token_entry.get_mut();
+  let state = state_entry.get_mut();
   let (ref buf_read, ref buf_write, ref status) = *state.shared;
 
   // TODO: Should we handle a poisoned lock state here? IE if a thread with a connection panics,
@@ -34,7 +37,8 @@ pub fn handle(mut entry: StateEntry, poll: &Poll) {
   // Thus ensuring it will hear the notification to wake up and observe the closed status.
   if status.is_closed() {
     poll::close_remote_socket(poll, socket, buf);
-    entry.remove();
+    state_entry.remove();
+    token_entry.remove();
     return;
   }
 
@@ -42,13 +46,21 @@ pub fn handle(mut entry: StateEntry, poll: &Poll) {
   match socket.recv(&mut state.buf_local) {
     Ok(size) => {
       match &state.fsm {
-        FSM::Listen { tx } |
-        FSM::Handshaking { tx } => {
-          let on_write = |usize| -> io::Result<usize> {
-            println!("Called with {}", usize);
-            Ok(usize)
+        FSM::Listen { token, tx_to_service, tx_on_write, waker } |
+        FSM::Handshaking { token, tx_to_service, tx_on_write, waker } => {
+          let on_write = {
+            let token = *token;
+            let tx_on_write = tx_on_write.clone();
+            let waker = Arc::clone(waker);
+
+            move |size| -> io::Result<usize> {
+              tx_on_write.send(token).map_err(error::cannot_send_to_daemon)?;
+              waker.wake().map_err(error::wake_failed)?;
+              Ok(size)
+            }
           };
-          match tx.send(ToService::Connection(Box::new(on_write), Arc::clone(&state.shared))) {
+
+          match tx_to_service.send(ToService::Connection(Box::new(on_write), Arc::clone(&state.shared))) {
             Ok(_) => {
               buf.push_back(&state.buf_local[..size]).map(|_| buf.notify_one());
               if let FSM::Listen { .. } = state.fsm {
@@ -67,7 +79,8 @@ pub fn handle(mut entry: StateEntry, poll: &Poll) {
               // NOTE: Setting status is technically not necessary, there is no clientside to observe this
               status.set_client_hup();
               poll::close_remote_socket(poll, socket, buf);
-              entry.remove();
+              state_entry.remove();
+              token_entry.remove();
             }
           };
         },
@@ -86,7 +99,8 @@ pub fn handle(mut entry: StateEntry, poll: &Poll) {
         let errno = e.raw_os_error();
         status.set_io_err(errno);
         poll::close_remote_socket(poll, socket, buf);
-        entry.remove();
+        state_entry.remove();
+        token_entry.remove();
       }
     }
   }

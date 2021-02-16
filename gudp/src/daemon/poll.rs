@@ -1,6 +1,7 @@
 use std::io;
 use std::collections::HashMap;
 use std::net::UdpSocket as StdUdpSocket;
+use std::net::SocketAddr;
 
 use log::warn;
 use mio::{Poll, Token, Interest};
@@ -25,13 +26,13 @@ pub fn close_remote_socket<'a>(
   deregister_io(poll, socket);
 }
 
-pub fn handle_failure(e: io::Error, states: &mut HashMap<Token, (State, MioUdpSocket)>) -> io::Error {
+pub fn handle_failure(e: io::Error, states: &mut HashMap<SocketAddr, State>) -> io::Error {
   // Call to the system selector failed.
   // We cannot perform any evented IO without it.
   // It's possible this error has non-fatal variants, but it's
   // likely platform-specific. For now we treat them all as fatal.
   let errno = e.raw_os_error();
-  for (_, (state, _socket)) in states.into_iter() {
+  for (_, state) in states.into_iter() {
     let (ref buf_read, ref _buf_write, ref status) = *state.shared;
     let buf_read = buf_read.lock().expect("Could not acquire unpoisoned read lock");
     status.set_io_err(errno);
@@ -41,7 +42,7 @@ pub fn handle_failure(e: io::Error, states: &mut HashMap<Token, (State, MioUdpSo
   e
 }
 
-pub fn register_io(poll: &Poll, io: StdUdpSocket, next_conn_id: &mut usize) -> Option<(Token, MioUdpSocket)> {
+pub fn register_io(poll: &Poll, io: StdUdpSocket, next_conn_id: &mut usize) -> Option<(Token, MioUdpSocket, SocketAddr)> {
   // Create a mio wrapper for the socket.
   let mut conn = MioUdpSocket::from_std(io);
 
@@ -52,7 +53,8 @@ pub fn register_io(poll: &Poll, io: StdUdpSocket, next_conn_id: &mut usize) -> O
   // Register this io with its token for polling
   poll.registry()
     .register(&mut conn, token, Interest::READABLE | Interest::WRITABLE)
-    .map(|_| (token, conn))
+    .and_then(|_| conn.local_addr())
+    .map(|addr| (token, conn, addr))
     .ok()
 }
 

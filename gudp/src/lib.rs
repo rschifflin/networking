@@ -2,7 +2,6 @@ mod connection;
 mod constants;
 mod daemon;
 mod error;
-mod hashmap_ext;
 mod service;
 mod state;
 mod types;

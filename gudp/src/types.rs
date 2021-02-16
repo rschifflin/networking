@@ -12,6 +12,8 @@ use crate::state::Status;
 #[allow(non_camel_case_types)]
 pub type READ_BUFFER_TAG = ();
 
+//TODO: Match on pairs of local:peer addrs; pub type AddrPair = (/*Local*/ SocketAddr, /*Remote*/ SocketAddr);
+
 pub type OnWrite = dyn Fn(usize) -> io::Result<usize> + Send;
 pub type SharedConnState = (
   /*BufRead*/   CondMutex<Bring, READ_BUFFER_TAG>,

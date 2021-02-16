@@ -1,4 +1,5 @@
 use std::collections::hash_map::OccupiedEntry;
+use std::net::SocketAddr;
 
 use mio::{Poll, Token};
 use mio::net::UdpSocket as MioUdpSocket;
@@ -8,8 +9,12 @@ use bring::WithOpt;
 use crate::daemon::poll;
 use crate::state::State;
 
-pub fn handle(mut entry: OccupiedEntry<Token, (State, MioUdpSocket)>, poll: &Poll) {
-  let (ref mut state, ref mut socket) = entry.get_mut();
+type TokenEntry<'a> = OccupiedEntry<'a, Token, (MioUdpSocket, SocketAddr)>;
+type StateEntry<'a> = OccupiedEntry<'a, SocketAddr, State>;
+
+pub fn handle(mut token_entry: TokenEntry, mut state_entry: StateEntry, poll: &Poll) {
+  let (ref mut socket, ref _addr) = token_entry.get_mut();
+  let state = state_entry.get_mut();
   let (ref buf_read, ref buf_write, ref status) = *state.shared;
 
   // NOTE: Unlike the READ case, WRITEs never sleep on a condvar. If a write would overflow the write buffer, we
@@ -51,7 +56,8 @@ pub fn handle(mut entry: OccupiedEntry<Token, (State, MioUdpSocket)>, poll: &Pol
 
         status.set_io_err(errno);
         poll::close_remote_socket(poll, socket, lock);
-        entry.remove();
+        state_entry.remove();
+        token_entry.remove();
       }
     }
   }
