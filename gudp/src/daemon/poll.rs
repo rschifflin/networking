@@ -6,7 +6,7 @@ use log::warn;
 use mio::{Poll, Token, Interest};
 use mio::net::UdpSocket as MioUdpSocket;
 
-use bring::Bring;
+use bring::bounded::Bring;
 use cond_mutex::CondMutexGuard;
 
 use crate::state::State;

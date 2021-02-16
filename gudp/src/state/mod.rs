@@ -4,7 +4,7 @@ use std::io;
 use crossbeam::channel;
 use mio::net::UdpSocket as MioUdpSocket;
 
-use bring::Bring;
+use bring::bounded::Bring;
 use cond_mutex::CondMutex;
 
 use crate::types::SharedConnState;

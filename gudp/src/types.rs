@@ -1,7 +1,7 @@
 use crossbeam::channel::Sender;
 use std::sync::{Arc, Mutex};
 use std::net::UdpSocket;
-use bring::Bring;
+use bring::bounded::Bring;
 
 use cond_mutex::CondMutex;
 use crate::state::Status;
