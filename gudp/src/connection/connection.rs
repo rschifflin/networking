@@ -2,19 +2,17 @@ use std::net::UdpSocket;
 use std::sync::Arc;
 
 use crossbeam::channel;
-use mio::Waker;
 
 use crate::Service;
-use crate::types::SharedConnState;
-use crate::types::{FromDaemon, ToDaemon};
+use crate::types::{SharedConnState, OnWrite, FromDaemon, ToDaemon};
 use crate::error;
 
 use std::io;
 
 // A user-facing GUDP Connection interface
 pub struct Connection {
-  waker: Arc<Waker>,
-  shared: Arc<SharedConnState>
+  on_write: Box<OnWrite>,
+  shared: Arc<SharedConnState>,
 }
 
 impl Drop for Connection {
@@ -25,8 +23,8 @@ impl Drop for Connection {
 }
 
 impl Connection {
-    pub fn new(waker: Arc<Waker>, shared: Arc<SharedConnState>) -> Connection {
-      Connection { waker, shared }
+    pub fn new(on_write: Box<OnWrite>, shared: Arc<SharedConnState>) -> Connection {
+      Connection { on_write, shared }
     }
 
     pub fn send(&self, buf: &[u8]) -> io::Result<usize> {
@@ -37,11 +35,8 @@ impl Connection {
       let push_result = buf_write.push_back(buf);
       drop(buf_write);
       match push_result {
-        Some(size) => {
-          self.waker.wake().map_err(error::wake_failed)?; // Wake on send to flush all writes immediately
-          Ok(size)
-        },
-        None => { Err(error::no_space_to_write()) }
+        Some(size) => (self.on_write)(size), // Wake on send to flush all writes immediately
+        None => Err(error::no_space_to_write())
       }
     }
 
@@ -108,23 +103,23 @@ pub fn connect(service: &Service, socket: UdpSocket) -> io::Result<Connection> {
   // Force daemon to handle this new connection immediately
   waker.wake().map_err(error::wake_failed)?;
 
-  // Expect IORegistered followd by Connection.
+  // Expect IORegistered followed by Connection.
   // Close any spurious connections and reject any other ordering
   rx.recv()
     .map_err(error::cannot_recv_from_daemon)
     .and_then(|res1| match res1 {
-      FromDaemon::IORegistered => Ok(waker),
-      FromDaemon::Connection(shared) => {
-        drop(Connection::new(waker, shared));
+      FromDaemon::IORegistered => Ok(()),
+      FromDaemon::Connection(on_write, shared) => {
+        drop(Connection::new(on_write, shared));
         Err(error::unexpected_recv_from_daemon())
       }
     })
-    .and_then(|waker| {
+    .and_then(|_| {
       rx.recv()
         .map_err(error::cannot_recv_from_daemon)
         .and_then(|res2| match res2 {
           FromDaemon::IORegistered => Err(error::unexpected_recv_from_daemon()),
-          FromDaemon::Connection(shared) => Ok(Connection::new(waker, shared))
+          FromDaemon::Connection(on_write, shared) => Ok(Connection::new(on_write, shared))
         })
     })
 }

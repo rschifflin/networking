@@ -1,5 +1,6 @@
 use std::collections::hash_map::OccupiedEntry;
 use std::sync::Arc;
+use std::io;
 
 use mio::{Poll, Token};
 use mio::net::UdpSocket as MioUdpSocket;
@@ -43,10 +44,13 @@ pub fn handle(mut entry: StateEntry, poll: &Poll) {
       match &state.fsm {
         FSM::Listen { tx } |
         FSM::Handshaking { tx } => {
-          match tx.send(ToService::Connection(Arc::clone(&state.shared))) {
+          let on_write = |usize| -> io::Result<usize> {
+            println!("Called with {}", usize);
+            Ok(usize)
+          };
+          match tx.send(ToService::Connection(Box::new(on_write), Arc::clone(&state.shared))) {
             Ok(_) => {
               buf.push_back(&state.buf_local[..size]).map(|_| buf.notify_one());
-
               if let FSM::Listen { .. } = state.fsm {
                 // TODO: Write this into separate unshared daemon write buffer that doesn't require lock protection
                 // What happens if the buffer here is full with user writes? Etc
