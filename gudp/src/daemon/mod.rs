@@ -29,9 +29,8 @@ pub fn spawn(mut poll: Poll, waker: Arc<Waker>, rx: channel::Receiver<FromServic
       let mut states: HashMap<SocketAddr, State> = HashMap::new();
       let mut buf_local = vec![0u8; CONFIG_BUF_SIZE_BYTES];
 
-      let timer = std::time::Duration::from_millis(100);
       loop {
-        match poll.poll(&mut events, Some(timer)) {
+        match poll.poll(&mut events, None) {
           Ok(()) => {
             // Clear out all msgs from service
             for msg in rx.try_iter() {

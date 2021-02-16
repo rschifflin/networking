@@ -31,11 +31,12 @@ pub fn listen(service: &Service, socket: UdpSocket) -> io::Result<Listener> {
   tx_to_daemon.send(ToDaemon::Listen(socket, tx))
     .map_err(error::cannot_send_to_daemon)?;
 
+  waker.wake()?; // Force daemon to handle this new connection immediately
+
   match rx_from_daemon.recv() {
     // The expected case. Once the io has been confirmed, we can return a listener
     // which can accept() incoming connections.
     Ok(FromDaemon::IORegistered) => {
-      waker.wake()?; // Force daemon to handle this new connection immediately
       Ok(Listener { rx: rx_from_daemon })
     },
 
