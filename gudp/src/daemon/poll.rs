@@ -7,36 +7,23 @@ use log::warn;
 use mio::{Poll, Token, Interest};
 use mio::net::UdpSocket as MioUdpSocket;
 
-use bring::bounded::Bring;
-use cond_mutex::CondMutexGuard;
+use crate::socket::{Socket, PeerType};
 
-use crate::state::State;
-use crate::types::READ_BUFFER_TAG;
-
-// Only call when you've ensured status.is_closed() is true!
-// Otherwise notified readers might sleep again.
-// See notes in read_event and write_event
-pub fn close_remote_socket<'a>(
-  poll: &'a Poll,
-  socket: &'a mut MioUdpSocket,
-  cond_lock: CondMutexGuard<Bring, READ_BUFFER_TAG>
-) {
-  cond_lock.notify_all();
-  drop(cond_lock);
-  deregister_io(poll, socket);
-}
-
-pub fn handle_failure(e: io::Error, states: &mut HashMap<SocketAddr, State>) -> io::Error {
+pub fn handle_failure(e: io::Error, token_map: &mut HashMap<Token, Socket>) -> io::Error {
   // Call to the system selector failed.
   // We cannot perform any evented IO without it.
   // It's possible this error has non-fatal variants, but it's
   // likely platform-specific. For now we treat them all as fatal.
   let errno = e.raw_os_error();
-  for (_, state) in states.into_iter() {
-    let (ref buf_read, ref _buf_write, ref status) = *state.shared;
-    let buf_read = buf_read.lock().expect("Could not acquire unpoisoned read lock");
-    status.set_io_err(errno);
-    buf_read.notify_all();
+  for (_, socket) in token_map.into_iter() {
+    match &socket.peer_type {
+      PeerType::Direct(/*TODO: addr,*/ state) => {
+        let (ref buf_read, ref _buf_write, ref status) = *state.shared;
+        let buf_read = buf_read.lock().expect("Could not acquire unpoisoned read lock");
+        status.set_io_err(errno);
+        buf_read.notify_all();
+      }
+    }
   }
 
   e

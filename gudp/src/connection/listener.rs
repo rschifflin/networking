@@ -15,7 +15,7 @@ pub struct Listener {
 impl Listener {
   // Block until connection is established or the daemon dies trying I guess
   // TODO: What happens when listeners drop before calling accept?? And what _should_ happen ideally?
-  pub fn accept(self) -> io::Result<Connection> {
+  pub fn accept(&self) -> io::Result<Connection> {
     match self.rx.recv() {
       Ok(FromDaemon::Connection(on_write, shared)) => Ok(Connection::new(on_write, shared)),
       Err(e) => Err(error::cannot_recv_from_daemon(e)),
@@ -37,7 +37,9 @@ pub fn listen(service: &Service, socket: UdpSocket) -> io::Result<Listener> {
     // The expected case. Once the io has been confirmed, we can return a listener
     // which can accept() incoming connections.
     Ok(FromDaemon::IORegistered) => {
-      Ok(Listener { rx: rx_from_daemon })
+      Ok(Listener {
+        rx: rx_from_daemon
+      })
     },
 
     // This is unexpected. We only wanted an IORegistered message.

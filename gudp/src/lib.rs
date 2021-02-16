@@ -3,6 +3,7 @@ mod constants;
 mod daemon;
 mod error;
 mod service;
+mod socket;
 mod state;
 mod types;
 
