@@ -13,7 +13,7 @@ use crate::error;
 type TokenEntry<'a> = OccupiedEntry<'a, Token, (MioUdpSocket, SocketAddr)>;
 type StateEntry<'a> = OccupiedEntry<'a, SocketAddr, State>;
 
-pub fn handle(mut token_entry: TokenEntry, mut state_entry: StateEntry, poll: &Poll) {
+pub fn handle(mut token_entry: TokenEntry, mut state_entry: StateEntry, buf_local: &mut [u8], poll: &Poll) {
   let (ref mut socket, ref _addr) = token_entry.get_mut();
   let state = state_entry.get_mut();
   let (ref buf_read, ref buf_write, ref status) = *state.shared;
@@ -43,7 +43,7 @@ pub fn handle(mut token_entry: TokenEntry, mut state_entry: StateEntry, poll: &P
   }
 
   // TODO: Read in loop until we hit WOULDBLOCK
-  match socket.recv(&mut state.buf_local) {
+  match socket.recv(buf_local) {
     Ok(size) => {
       match &state.fsm {
         FSM::Listen { token, tx_to_service, tx_on_write, waker } |
@@ -62,7 +62,7 @@ pub fn handle(mut token_entry: TokenEntry, mut state_entry: StateEntry, poll: &P
 
           match tx_to_service.send(ToService::Connection(Box::new(on_write), Arc::clone(&state.shared))) {
             Ok(_) => {
-              buf.push_back(&state.buf_local[..size]).map(|_| buf.notify_one());
+              buf.push_back(&mut buf_local[..size]).map(|_| buf.notify_one());
               if let FSM::Listen { .. } = state.fsm {
                 // TODO: Write this into separate unshared daemon write buffer that doesn't require lock protection
                 // What happens if the buffer here is full with user writes? Etc
@@ -85,7 +85,7 @@ pub fn handle(mut token_entry: TokenEntry, mut state_entry: StateEntry, poll: &P
           };
         },
         FSM::Connected => {
-          buf.push_back(&state.buf_local[..size]).map(|_| buf.notify_one());
+          buf.push_back(&mut buf_local[..size]).map(|_| buf.notify_one());
           drop(buf);
         }
       }

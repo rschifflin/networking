@@ -9,7 +9,7 @@ use mio::{Poll, Events, Token, Waker};
 use mio::net::UdpSocket as MioUdpSocket;
 use crossbeam::channel;
 
-use crate::constants::WAKE_TOKEN;
+use crate::constants::{WAKE_TOKEN, CONFIG_BUF_SIZE_BYTES};
 use crate::types::ToDaemon as FromService;
 use crate::state::State;
 
@@ -23,10 +23,11 @@ pub fn spawn(mut poll: Poll, waker: Arc<Waker>, rx: channel::Receiver<FromServic
     .name("gudp daemon".to_string())
     .spawn(move || -> io::Error {
       let (tx_on_write, rx_write_events) = channel::unbounded();
-      let mut events = Events::with_capacity(2); // 128 connections ought to be enough for anybody
+      let mut events = Events::with_capacity(128); // 128 connections ought to be enough for anybody
       let mut next_conn_id = 1;
       let mut token_map: HashMap<Token, (MioUdpSocket, SocketAddr)> = HashMap::new();
       let mut states: HashMap<SocketAddr, State> = HashMap::new();
+      let mut buf_local = vec![0u8; CONFIG_BUF_SIZE_BYTES];
 
       let timer = std::time::Duration::from_millis(100);
       loop {
@@ -43,7 +44,7 @@ pub fn spawn(mut poll: Poll, waker: Arc<Waker>, rx: channel::Receiver<FromServic
                 if let Entry::Occupied(token_entry) = token_map.entry(event.token()) {
                   let (_, addr) = token_entry.get();
                   if let Entry::Occupied(state_entry) = states.entry(*addr) {
-                    read_event::handle(token_entry, state_entry, &mut poll);
+                    read_event::handle(token_entry, state_entry, &mut buf_local, &mut poll);
                   }
                 }
               }
@@ -55,7 +56,7 @@ pub fn spawn(mut poll: Poll, waker: Arc<Waker>, rx: channel::Receiver<FromServic
                 if let Entry::Occupied(token_entry) = token_map.entry(event.token()) {
                   let (_, addr) = token_entry.get();
                   if let Entry::Occupied(state_entry) = states.entry(*addr) {
-                    write_event::handle(token_entry, state_entry, &mut poll);
+                    write_event::handle(token_entry, state_entry, &mut buf_local, &mut poll);
                   }
                 }
               }
@@ -66,7 +67,7 @@ pub fn spawn(mut poll: Poll, waker: Arc<Waker>, rx: channel::Receiver<FromServic
               if let Entry::Occupied(token_entry) = token_map.entry(token) {
                 let (_, addr) = token_entry.get();
                 if let Entry::Occupied(state_entry) = states.entry(*addr) {
-                  write_event::handle(token_entry, state_entry, &mut poll);
+                  write_event::handle(token_entry, state_entry, &mut buf_local, &mut poll);
                 }
               }
             }

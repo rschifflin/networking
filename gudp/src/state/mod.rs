@@ -19,7 +19,6 @@ mod status;
 /// Tracks all the behavior of a given socket
 pub struct State {
   pub shared: Arc<SharedConnState>,
-  pub buf_local: Vec<u8>,
   pub fsm: FSM
 }
 
@@ -52,7 +51,6 @@ impl State {
     io.send(b"hello").map(|_| {
       State {
         shared: State::new_shared_state(),
-        buf_local: vec![0u8; CONFIG_BUF_SIZE_BYTES],
         fsm: FSM::Handshaking { token, tx_to_service, tx_on_write, waker }
       }
     })
@@ -65,7 +63,6 @@ impl State {
     waker: Arc<Waker>) -> State {
     State {
       shared: State::new_shared_state(),
-      buf_local: vec![0u8; CONFIG_BUF_SIZE_BYTES],
       fsm: FSM::Listen { token, tx_to_service, tx_on_write, waker }
     }
   }

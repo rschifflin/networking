@@ -12,7 +12,7 @@ use crate::state::State;
 type TokenEntry<'a> = OccupiedEntry<'a, Token, (MioUdpSocket, SocketAddr)>;
 type StateEntry<'a> = OccupiedEntry<'a, SocketAddr, State>;
 
-pub fn handle(mut token_entry: TokenEntry, mut state_entry: StateEntry, poll: &Poll) {
+pub fn handle(mut token_entry: TokenEntry, mut state_entry: StateEntry, buf_local: &mut [u8], poll: &Poll) {
   let (ref mut socket, ref _addr) = token_entry.get_mut();
   let state = state_entry.get_mut();
   let (ref buf_read, ref buf_write, ref status) = *state.shared;
@@ -27,7 +27,6 @@ pub fn handle(mut token_entry: TokenEntry, mut state_entry: StateEntry, poll: &P
   let mut buf_write = buf_write.lock().expect("Could not acquire unpoisoned write lock");
 
   let buf = &mut *buf_write;
-  let buf_local = &mut state.buf_local;
   let send_result = buf.with_front(buf_local, |buf_local, bytes| {
     let send = socket.send(&buf_local[..bytes]);
     let opt = match send {
