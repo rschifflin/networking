@@ -22,14 +22,7 @@ pub fn close_remote_socket<'a>(
 ) {
   cond_lock.notify_all();
   drop(cond_lock);
-
-  // If the deregister fails, we'll silently leak the file descriptor
-  // For now, simply log if this occurs.
-  // TODO: We could bubble up hanging resources to the main loop,
-  // where we iterate on trying to deregister them.
-  poll.registry().deregister(socket).unwrap_or_else(|e| {
-    warn!("Unable to deregister socket from poll on close. The socket fd may leak! Reason: {}", e);
-  });
+  deregister_io(poll, socket);
 }
 
 pub fn handle_failure(e: io::Error, states: &mut HashMap<Token, (State, MioUdpSocket)>) -> io::Error {
@@ -61,4 +54,14 @@ pub fn register_io(poll: &Poll, io: StdUdpSocket, next_conn_id: &mut usize) -> O
     .register(&mut conn, token, Interest::READABLE | Interest::WRITABLE)
     .map(|_| (token, conn))
     .ok()
+}
+
+// If the deregister fails, we'll silently leak the file descriptor
+// For now, simply log if this occurs.
+// TODO: We could bubble up hanging resources to the main loop,
+// where we iterate on trying to deregister them.
+pub fn deregister_io(poll: &Poll, io: &mut MioUdpSocket) {
+  poll.registry().deregister(io).unwrap_or_else(|e| {
+    warn!("Unable to deregister socket from poll on close. The socket fd may leak! Reason: {}", e);
+  });
 }

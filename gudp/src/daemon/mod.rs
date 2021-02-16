@@ -45,6 +45,8 @@ pub fn spawn(mut poll: Poll, _waker: Arc<Waker>, rx: Receiver<FromService>) -> i
               }
             };
 
+            // TODO: Add signal_write chan and only update signalled writers
+            // TODO: Add timer wheel iter and only update on timed out writers
             // Handle writes
             for key in states.keys_ext(&mut states_keybuf) {
               if let Entry::Occupied(entry) = states.entry(key) {
@@ -52,6 +54,7 @@ pub fn spawn(mut poll: Poll, _waker: Arc<Waker>, rx: Receiver<FromService>) -> i
               }
             }
           },
+
           Err(e) => return poll::handle_failure(e, &mut states)
         }
       }

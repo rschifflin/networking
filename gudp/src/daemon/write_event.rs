@@ -18,8 +18,7 @@ pub fn handle(mut entry: OccupiedEntry<Token, (State, MioUdpSocket)>, poll: &Pol
   // Doing so would add another condvar and require us to acquire BOTH the read+write locks before deregistering,
   // signalling both condvars.
 
-  // TODO: Acquire read lock and check if the socket is closed to perform a deregister.
-  // TODO: Loop thru and write the entire buffer until a WOULDBLOCK or some socket error
+  // TODO: Read in loop until we hit WOULDBLOCK
   let mut buf_write = buf_write.lock().expect("Could not acquire unpoisoned write lock");
 
   let buf = &mut *buf_write;
@@ -32,7 +31,6 @@ pub fn handle(mut entry: OccupiedEntry<Token, (State, MioUdpSocket)>, poll: &Pol
     };
     (send, opt)
   });
-
   drop(buf);
   drop(buf_write);
 

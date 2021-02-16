@@ -12,7 +12,7 @@ type StateEntry<'a> = OccupiedEntry<'a, Token, (State, MioUdpSocket)>;
 
 pub fn handle(mut entry: StateEntry, poll: &Poll) {
   let (ref mut state, ref mut socket) = entry.get_mut();
-  let (ref buf_read, ref _buf_write, ref status) = *state.shared;
+  let (ref buf_read, ref buf_write, ref status) = *state.shared;
 
   // TODO: Should we handle a poisoned lock state here? IE if a thread with a connection panics,
   // what should the daemon do about it? Just close the connection?
@@ -37,19 +37,30 @@ pub fn handle(mut entry: StateEntry, poll: &Poll) {
     return;
   }
 
+  // TODO: Read in loop until we hit WOULDBLOCK
   match socket.recv(&mut state.buf_local) {
     Ok(size) => {
       match &state.fsm {
-        FSM::Listen { tx } => {
+        FSM::Listen { tx } |
+        FSM::Handshaking { tx } => {
           match tx.send(ToService::Connection(Arc::clone(&state.shared))) {
             Ok(_) => {
               buf.push_back(&state.buf_local[..size]).map(|_| buf.notify_one());
+
+              if let FSM::Listen { .. } = state.fsm {
+                // TODO: Write this into separate unshared daemon write buffer that doesn't require lock protection
+                // What happens if the buffer here is full with user writes? Etc
+                let mut buf_w = buf_write.lock().expect("Could not acquire unpoisoned write lock");
+                buf_w.push_back(b"hello").expect("Could not write minimal hello! Write buffer too small!");
+                drop(buf_w);
+              }
+
               state.fsm = FSM::Connected;
+              drop(buf);
             },
             Err(_) => {
-              // Failed to create the listener connection. Deregister
-
-              // NOTE: Technically not necessary, there is no clientside to observe this
+              // Failed to create the connection. Deregister
+              // NOTE: Setting status is technically not necessary, there is no clientside to observe this
               status.set_client_hup();
               poll::close_remote_socket(poll, socket, buf);
               entry.remove();

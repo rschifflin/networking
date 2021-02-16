@@ -100,7 +100,7 @@ impl Connection {
 }
 
 pub fn connect(service: &Service, socket: UdpSocket) -> io::Result<Connection> {
-  let (tx, rx) = channel::bounded(1);
+  let (tx, rx) = channel::bounded(2);
   let (tx_to_daemon, waker) = service.clone_parts();
   tx_to_daemon.send(ToDaemon::Connect(socket, tx))
     .map_err(error::cannot_send_to_daemon)?;
