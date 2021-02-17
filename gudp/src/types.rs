@@ -34,5 +34,5 @@ pub enum ToDaemon {
 
 pub enum FromDaemon {
   Listener/*TODO: (Box<OnClose>)*/,
-  Connection(Box<OnWrite>, Arc<SharedConnState>)
+  Connection(Box<OnWrite>, Arc<SharedConnState>, (SocketAddr, SocketAddr))
 }

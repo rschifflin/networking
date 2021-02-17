@@ -1,4 +1,4 @@
-use std::net::{UdpSocket, ToSocketAddrs};
+use std::net::{UdpSocket, SocketAddr, ToSocketAddrs};
 use std::sync::Arc;
 
 use crossbeam::channel;
@@ -15,6 +15,7 @@ use std::io;
 pub struct Connection {
   on_write: Box<OnWrite>,
   shared: Arc<SharedConnState>,
+  id: (SocketAddr, SocketAddr)
 }
 
 impl Drop for Connection {
@@ -25,8 +26,8 @@ impl Drop for Connection {
 }
 
 impl Connection {
-    pub fn new(on_write: Box<OnWrite>, shared: Arc<SharedConnState>) -> Connection {
-      Connection { on_write, shared }
+    pub fn new(on_write: Box<OnWrite>, shared: Arc<SharedConnState>, id: (SocketAddr, SocketAddr)) -> Connection {
+      Connection { on_write, shared, id }
     }
 
     pub fn send(&self, buf: &[u8]) -> io::Result<usize> {
@@ -94,6 +95,14 @@ impl Connection {
         }
       }).transpose()
     }
+
+    pub fn local_addr(&self) -> SocketAddr {
+      self.id.0
+    }
+
+    pub fn peer_addr(&self) -> SocketAddr {
+      self.id.1
+    }
 }
 
 pub fn connect<A: ToSocketAddrs>(service: &Service, socket: UdpSocket, to_addr: A) -> io::Result<Connection> {
@@ -115,7 +124,7 @@ pub fn connect<A: ToSocketAddrs>(service: &Service, socket: UdpSocket, to_addr: 
   rx.recv()
     .map_err(error::cannot_recv_from_daemon)
     .and_then(|received| match received {
-      FromDaemon::Connection(on_write, shared) => Ok(Connection::new(on_write, shared)),
+      FromDaemon::Connection(on_write, shared, id) => Ok(Connection::new(on_write, shared, id)),
 
       // This is unexpected. We only wanted a Connection message.
       // Close the given listener and signal the issue;

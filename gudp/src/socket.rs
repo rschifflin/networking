@@ -12,6 +12,7 @@ use crate::state::State;
 
 pub struct Socket {
   pub io: MioUdpSocket,
+  pub local_addr: SocketAddr,
   pub peer_type: PeerType
 }
 
@@ -33,8 +34,8 @@ impl ListenOpts {
 }
 
 impl Socket {
-  pub fn new(io: MioUdpSocket, peer_type: PeerType) -> Socket {
-    Socket { io, peer_type }
+  pub fn new(io: MioUdpSocket, local_addr: SocketAddr, peer_type: PeerType) -> Socket {
+    Socket { io, local_addr, peer_type }
   }
 }
 

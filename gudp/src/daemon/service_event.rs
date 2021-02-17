@@ -20,14 +20,14 @@ pub fn handle(msg: FromService,
   match msg {
     FromService::Connect(io, respond_tx, peer_addr) => {
       match poll::register_io(poll, io, next_conn_id) {
-        Some((token, mut conn, _local_addr)) => {
+        Some((token, mut conn, local_addr)) => {
           let tx_on_write = tx_on_write.clone();
           let waker = Arc::clone(waker);
           let state = State::init_connect(token, respond_tx, tx_on_write, waker);
           conn.send_to(b"hello", peer_addr).ok()
             .or_else(|| { poll::deregister_io(poll, &mut conn); None })
             .map(|_| {
-              let socket = Socket::new(conn, PeerType::Direct(peer_addr, state));
+              let socket = Socket::new(conn, local_addr, PeerType::Direct(peer_addr, state));
               token_map.insert(token, socket);
             });
         }
@@ -37,7 +37,7 @@ pub fn handle(msg: FromService,
 
     FromService::Listen(io, respond_tx) => {
       match poll::register_io(poll, io, next_conn_id) {
-        Some((token, mut conn, _addr)) => {
+        Some((token, mut conn, local_addr)) => {
           // TODO: Build callback for listener with mpsc for listen_closed_events
           respond_tx.send(ToService::Listener)
             .map_err(|_| poll::deregister_io(poll, &mut conn)).ok()
@@ -48,7 +48,7 @@ pub fn handle(msg: FromService,
               let listen = Some(ListenOpts::new(token, respond_tx, tx_on_write, waker));
               token_map.insert(
                 token,
-                Socket::new(conn, PeerType::Passive { peers, listen })
+                Socket::new(conn, local_addr, PeerType::Passive { peers, listen })
               );
             });
         },

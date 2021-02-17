@@ -18,7 +18,7 @@ impl Listener {
   // TODO: What happens when listeners drop before calling accept?? And what _should_ happen ideally?
   pub fn accept(&self) -> io::Result<Connection> {
     match self.rx.recv() {
-      Ok(FromDaemon::Connection(on_write, shared)) => Ok(Connection::new(on_write, shared)),
+      Ok(FromDaemon::Connection(on_write, shared, id)) => Ok(Connection::new(on_write, shared, id)),
       Err(e) => Err(error::cannot_recv_from_daemon(e)),
       _ => Err(error::unexpected_recv_from_daemon())
     }
@@ -45,9 +45,9 @@ pub fn listen(service: &Service, socket: UdpSocket) -> io::Result<Listener> {
 
     // This is unexpected. We only wanted an IORegistered message.
     // Close the given connection and signal the issue;
-    Ok(FromDaemon::Connection(on_write, shared)) => {
+    Ok(FromDaemon::Connection(on_write, shared, id)) => {
       warn!("When trying to register listener socket, received direct connection instead");
-      let conn = Connection::new(on_write, shared);
+      let conn = Connection::new(on_write, shared, id);
       drop(conn);
       Err(error::unexpected_recv_from_daemon())
     },

@@ -12,27 +12,32 @@ fn main() {
   let socket = std::net::UdpSocket::bind(src_addr).expect("Could not bind");
   socket.set_nonblocking(true).expect("Could not set nonblocking!");
 
-  let mut response_buffer = [0u8; 1000];
   let service = gudp::Service::initialize().expect("Could not initialize gudp service");
   if let Some("-l") = args.next().as_deref() {
-    //let listener = gudp::listen(&service, socket).expect("Could not start listener");
-    let listener = gudp::connect(&service, socket, dst_addr).expect("Could not start listener");
-    listen(listener, &mut response_buffer, src_port, dst_port);
+    let listener = gudp::listen(&service, socket).expect("Could not start listener");
+    listen(listener, src_port);
   } else {
     let connection = gudp::connect(&service, socket, dst_addr).expect("Could not connect gudp");
-    ping(connection, &mut response_buffer, src_port, dst_port)
+    ping(connection)
   }
 }
 
-fn listen(conn: gudp::Connection, buf: &mut [u8], src_port: u16, dst_port: u16) {
-  // Block until a connection has been established
-  println!("Listening on {} for messages from {}", src_port, dst_port);
-
-  let mut recv_len = conn.recv(buf).expect("Failed to recv");
-  println!("Accepted connection on {} for messages from {}", src_port, dst_port);
-  conn.send(b"hello").expect("Failed to send");
-
+fn listen(listener: gudp::Listener, src_port: u16) {
+  println!("Listening on {} for messages", src_port);
   loop {
+    let conn = listener.accept().expect("Could not accept connection on listener");
+    conn.send(b"hello").expect("Failed to greet new peer");
+    std::thread::spawn(move || { on_accept(conn) });
+  }
+}
+
+fn on_accept(conn: gudp::Connection) {
+  let src_port = conn.local_addr().port();
+  let dst_port = conn.peer_addr().port();
+  println!("Accepted connection on {} for messages from {}", src_port, dst_port);
+  let mut buf = [0u8; 1000];
+  loop {
+    let mut recv_len = conn.recv(&mut buf).expect("Failed to recv");
     let recv_str = std::str::from_utf8(&buf[..recv_len]).expect("Did not recv utf8");
     println!("[From {}]: {}", dst_port, recv_str);
 
@@ -40,18 +45,19 @@ fn listen(conn: gudp::Connection, buf: &mut [u8], src_port: u16, dst_port: u16) 
       conn.send(b"pong").expect("Failed to send");
       println!("> pong");
     }
-
-    recv_len = conn.recv(buf).expect("Failed to recv");
   }
 }
 
-fn ping(conn: gudp::Connection, buf: &mut [u8], src_port: u16, dst_port: u16) {
+fn ping(conn: gudp::Connection) {
+  let src_port = conn.local_addr().port();
+  let dst_port = conn.peer_addr().port();
   println!("Sending stdin from {} to {}", src_port, dst_port);
+  let mut buf = [0u8; 1000];
   let mut send_string = String::new();
   let stdin = std::io::stdin();
 
   loop {
-    if let Some(Ok(recv_len)) = conn.try_recv(buf) {
+    if let Some(Ok(recv_len)) = conn.try_recv(&mut buf) {
       println!("[From {}]: {}", dst_port, std::str::from_utf8(&buf[..recv_len]).expect("Did not recv utf8"));
     };
 

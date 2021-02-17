@@ -10,7 +10,7 @@ use crate::types::FromDaemon as ToService;
 use crate::state::{State, Status, Closer, FSM};
 
 impl State {
-  pub fn read(&mut self, peer_addr: SocketAddr, buf_local: &mut [u8], buf_size: usize) -> Result<(), Closer> {
+  pub fn read(&mut self, local_addr: SocketAddr, peer_addr: SocketAddr, buf_local: &mut [u8], buf_size: usize) -> Result<(), Closer> {
     let (ref buf_read, ref buf_write, ref status) = *self.shared;
 
     // TODO: Should we handle a poisoned lock state here? IE if a thread with a connection panics,
@@ -49,7 +49,7 @@ impl State {
           }
         };
 
-        match tx_to_service.send(ToService::Connection(Box::new(on_write), Arc::clone(&self.shared))) {
+        match tx_to_service.send(ToService::Connection(Box::new(on_write), Arc::clone(&self.shared), (local_addr, peer_addr))) {
           Ok(_) => {
             buf.push_back(&mut buf_local[..buf_size]).map(|_| buf.notify_one());
             self.fsm = FSM::Connected;

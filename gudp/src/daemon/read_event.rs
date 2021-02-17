@@ -55,7 +55,7 @@ pub fn handle(mut token_entry: TokenEntry, buf_local: &mut [u8], poll: &Poll) {
           match (peers.get_mut(&peer_addr), listen) {
             /* Handle existing peer */
             (Some(mut state), _) => {
-              if let Err(closer) = state.read(peer_addr, buf_local, size) {
+              if let Err(closer) = state.read(socket.local_addr, peer_addr, buf_local, size) {
                 peers.remove(&peer_addr); // Remove closed connection
                 if let Closer::IO = closer {
                   warn!("IO error closed a connection, but only hup was expected! Other connections on this IO may linger");
@@ -78,18 +78,17 @@ pub fn handle(mut token_entry: TokenEntry, buf_local: &mut [u8], poll: &Poll) {
                 Arc::clone(&listen_opts.waker));
 
               // If it fails, we simply don't insert the new peer
-              peer_state.read(peer_addr, buf_local, size).map(|_| {
+              peer_state.read(socket.local_addr, peer_addr, buf_local, size).map(|_| {
                 peers.insert(peer_addr, peer_state);
               });
             },
 
-            (None, None) => return, // Discard socket noise
+            (None, None) => return, // Discard unrecognized peer msgs when not listening
           }
         }
 
-        PeerType::Direct(addr, ref mut state) => {
-          if peer_addr != addr { return; } // Discard irrelevant socket noise */
-          if let Err(_) = state.read(addr, buf_local, size) {
+        PeerType::Direct(peer_addr, ref mut state) => {
+          if let Err(_) = state.read(socket.local_addr, peer_addr, buf_local, size) {
             poll::deregister_io(poll, &mut socket.io);
             token_entry.remove();
           };
