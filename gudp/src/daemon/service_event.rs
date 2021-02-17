@@ -23,9 +23,10 @@ pub fn handle(msg: FromService,
         Some((token, mut conn, _local_addr)) => {
           let tx_on_write = tx_on_write.clone();
           let waker = Arc::clone(waker);
-          State::init_connect(token, peer_addr, respond_tx, tx_on_write, waker, &conn).ok()
+          let state = State::init_connect(token, respond_tx, tx_on_write, waker);
+          conn.send_to(b"hello", peer_addr).ok()
             .or_else(|| { poll::deregister_io(poll, &mut conn); None })
-            .map(|state| {
+            .map(|_| {
               let socket = Socket::new(conn, PeerType::Direct(peer_addr, state));
               token_map.insert(token, socket);
             });

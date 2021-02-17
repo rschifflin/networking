@@ -16,7 +16,7 @@ use crate::error;
 
 // The client gracefully dropped their end of the connection
 // IO can still be flushed to the socket before the connection ends.
-const FLAG_CLIENT_HUP: u32 = 1u32.rotate_right(1);
+const FLAG_APP_HUP: u32 = 1u32.rotate_right(1);
 
 // The socket gracefully dropped their end of the connection
 // This is decided as a consequence of the protocol state
@@ -31,19 +31,30 @@ const FLAG_IO_ERR: u32 = 1u32.rotate_right(3);
 
 // The socket is in the closed state for any reason
 const FLAGS_CLOSED: u32 =
-  FLAG_CLIENT_HUP |
+  FLAG_APP_HUP |
   FLAG_IO_HUP |
   FLAG_IO_ERR;
 
 // The socket was gracefully closed by either side
 const FLAGS_HUP: u32 =
-  FLAG_CLIENT_HUP |
+  FLAG_APP_HUP |
   FLAG_IO_HUP;
+
+const FLAGS_APP_CLOSER: u32 = FLAG_APP_HUP;
+const FLAGS_PEER_CLOSER: u32 = FLAG_IO_HUP;
+const FLAGS_IO_CLOSER: u32 = FLAG_IO_ERR;
 
 const ERRNO_CLEAR: i32 = 0;
 
 #[derive(Debug)]
 pub enum ClientStatus { Active }
+
+#[derive(Copy, Clone, Debug)]
+pub enum Closer {
+  Application,
+  Peer,
+  IO
+}
 
 #[derive(Debug)]
 pub struct Status {
@@ -59,10 +70,10 @@ impl Status {
     }
   }
 
-  // Indicate the user has gracefully closed their connection end
+  // Indicate the app has gracefully closed their connection end
   pub fn set_client_hup(&self) {
-    // Set the client hangup flag and preserve the rest
-    self.status.fetch_or(FLAG_CLIENT_HUP, OSeqCst);
+    // Set the app hangup flag and preserve the rest
+    self.status.fetch_or(FLAG_APP_HUP, OSeqCst);
   }
 
   // Indicate the socket has gracefully closed their connection end
@@ -91,6 +102,20 @@ impl Status {
   pub fn is_closed(&self) -> bool {
     (self.status.load(OSeqCst) & FLAGS_CLOSED) != 0
   }
+
+  pub fn test_closed(&self) -> Option<Closer> {
+    let status = self.status.load(OSeqCst);
+    if (status & FLAGS_APP_CLOSER) != 0 {
+      Some(Closer::Application)
+    } else if (status & FLAGS_PEER_CLOSER) != 0 {
+      Some(Closer::Peer)
+    } else if (status & FLAGS_IO_CLOSER) != 0 {
+      Some(Closer::IO)
+    } else {
+      None
+    }
+  }
+
 
   pub fn is_open(&self) -> bool {
     !self.is_closed()

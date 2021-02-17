@@ -2,10 +2,11 @@ use std::collections::hash_map::OccupiedEntry;
 use std::sync::Arc;
 use std::io;
 use mio::{Poll, Token};
+use log::warn;
 
 use crate::socket::{Socket, PeerType};
 use crate::types::FromDaemon as ToService;
-use crate::state::FSM;
+use crate::state::{State, FSM, Closer};
 use crate::daemon::poll;
 use crate::error;
 
@@ -27,7 +28,6 @@ pub fn handle(mut token_entry: TokenEntry, buf_local: &mut [u8], poll: &Poll) {
         match socket.peer_type {
           PeerType::Direct(_, ref mut state) => {
             let (ref buf_read, ref _buf_write, ref status) = *state.shared;
-            // Must grab lock here first, see note below
             let buf = buf_read.lock().expect("Could not acquire unpoisoned read lock");
             status.set_io_err(errno);
             buf.notify_all();
@@ -48,82 +48,51 @@ pub fn handle(mut token_entry: TokenEntry, buf_local: &mut [u8], poll: &Poll) {
         token_entry.remove();
       }
     },
+
     Ok((size, peer_addr)) => {
       match socket.peer_type {
         PeerType::Passive { ref mut peers, ref listen } => {
-          // if peer_addr is a member of peers
           match (peers.get_mut(&peer_addr), listen) {
-            (Some(mut state), _) => { /* handle peer */ },
-            (None, Some(listen_opts)) => { /* create new peer */ },
+            /* Handle existing peer */
+            (Some(mut state), _) => {
+              if let Err(closer) = state.read(peer_addr, buf_local, size) {
+                peers.remove(&peer_addr); // Remove closed connection
+                if let Closer::IO = closer {
+                  warn!("IO error closed a connection, but only hup was expected! Other connections on this IO may linger");
+                }
+
+                // No peers left and not actively listening. Close and free the resource
+                if peers.len() == 0 && listen.is_none() {
+                  poll::deregister_io(poll, &mut socket.io);
+                  token_entry.remove();
+                }
+              };
+            },
+
+            /* create+handle new peer */
+            (None, Some(listen_opts)) => {
+              let mut peer_state = State::init_connect(
+                listen_opts.token,
+                listen_opts.tx_to_service.clone(),
+                listen_opts.tx_on_write.clone(),
+                Arc::clone(&listen_opts.waker));
+
+              // If it fails, we simply don't insert the new peer
+              peer_state.read(peer_addr, buf_local, size).map(|_| {
+                peers.insert(peer_addr, peer_state);
+              });
+            },
+
             (None, None) => return, // Discard socket noise
           }
         }
 
         PeerType::Direct(addr, ref mut state) => {
           if peer_addr != addr { return; } // Discard irrelevant socket noise */
-          let (ref buf_read, ref buf_write, ref status) = *state.shared;
-
-          // TODO: Should we handle a poisoned lock state here? IE if a thread with a connection panics,
-          // what should the daemon do about it? Just close the connection?
-          // Likely the client should panic on poison, and the daemon should recover the lock and close the conn on poison
-          // For now just panic
-          let mut buf = buf_read.lock().expect("Could not acquire unpoisoned read lock");
-
-          // NOTE: This status check must be done while holding the readlock to ensure no races occur of the form:
-          // time0|thread0: client acquires the readlock.
-          // time1|thread0: client observes an open status and no pending reads...
-          // time2|thread1: open status changes to closed...
-          // time3|thread1: this fn observes the closed status and signals the condvar to wake all _current_ sleepers
-          // time4|thread0: ... and then client sleeps, oblivious to the change in status and condvar signal
-          // Since after this notify_all, no future notifications are coming, client would sleep forever!
-          // The solution is to prevent the client from acquiring the readlock until this fn observes the closed status.
-          // That means when the client DOES acquire the readlock, it will observe a closed status and not sleep.
-          // Alternatively, if the client acquired the readlock first, it will sleep on the condvar before this fn can notify.
-          // Thus ensuring it will hear the notification to wake up and observe the closed status.
-          if status.is_closed() {
-            buf.notify_all();
+          if let Err(_) = state.read(addr, buf_local, size) {
             poll::deregister_io(poll, &mut socket.io);
-            drop(buf);
             token_entry.remove();
-            return;
-          }
-
-          match &state.fsm {
-            FSM::Handshaking { token, tx_to_service, tx_on_write, waker } => {
-              let on_write = {
-                let token = *token;
-                let tx_on_write = tx_on_write.clone();
-                let waker = Arc::clone(waker);
-
-                move |size| -> io::Result<usize> {
-                  tx_on_write.send((token, peer_addr)).map_err(error::cannot_send_to_daemon)?;
-                  waker.wake().map_err(error::wake_failed)?;
-                  Ok(size)
-                }
-              };
-
-              match tx_to_service.send(ToService::Connection(Box::new(on_write), Arc::clone(&state.shared))) {
-                Ok(_) => {
-                  buf.push_back(&mut buf_local[..size]).map(|_| buf.notify_one());
-                  state.fsm = FSM::Connected;
-                  drop(buf);
-                },
-                Err(_) => {
-                  // Failed to create the connection. Deregister
-                  // NOTE: Setting status is technically not necessary, there is no clientside to observe this
-                  status.set_client_hup();
-                  buf.notify_all();
-                  poll::deregister_io(poll, &mut socket.io);
-                  drop(buf);
-                  token_entry.remove();
-                }
-              };
-            },
-            FSM::Connected => {
-              buf.push_back(&mut buf_local[..size]).map(|_| buf.notify_one());
-              drop(buf);
-            }
-          }
+          };
         }
       }
     }

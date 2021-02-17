@@ -16,10 +16,10 @@ pub struct Socket {
 }
 
 pub struct ListenOpts {
-  token: Token,
-  tx_to_service: channel::Sender<ToService>,
-  tx_on_write: channel::Sender<(Token, SocketAddr)>,
-  waker: Arc<Waker>
+  pub token: Token,
+  pub tx_to_service: channel::Sender<ToService>,
+  pub tx_on_write: channel::Sender<(Token, SocketAddr)>,
+  pub waker: Arc<Waker>
 }
 
 impl ListenOpts {

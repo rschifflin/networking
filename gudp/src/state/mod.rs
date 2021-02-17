@@ -13,8 +13,10 @@ use crate::types::SharedConnState;
 use crate::types::FromDaemon as ToService;
 use crate::constants::CONFIG_BUF_SIZE_BYTES;
 
-pub use status::Status;
+pub use status::{Status, Closer};
 mod status;
+mod read;
+mod write;
 
 /// Connection state
 /// Tracks all the behavior of a given socket
@@ -37,19 +39,15 @@ impl State {
   // Returns None if unable to send the connection out to the client
   pub fn init_connect(
     token: Token,
-    peer_addr: SocketAddr,
     tx_to_service: channel::Sender<ToService>,
     tx_on_write: channel::Sender<(Token, SocketAddr)>,
-    waker: Arc<Waker>,
-    io: &MioUdpSocket) -> io::Result<State> {
+    waker: Arc<Waker>) -> State {
 
     // TODO: In reality, this will be a clock controlled heartbeat, not a one-off hello
-    io.send_to(b"hello", peer_addr).map(|_| {
-      State {
-        shared: State::new_shared_state(),
-        fsm: FSM::Handshaking { token, tx_to_service, tx_on_write, waker }
-      }
-    })
+    State {
+      shared: State::new_shared_state(),
+      fsm: FSM::Handshaking { token, tx_to_service, tx_on_write, waker }
+    }
   }
 
   fn new_shared_state() -> Arc<SharedConnState> {
