@@ -45,3 +45,7 @@ pub fn unexpected_recv_from_daemon() -> io::Error {
 pub fn cannot_register_with_daemon() -> io::Error {
   io::Error::new(io::ErrorKind::BrokenPipe, "Daemon failed to acknowledge io registration")
 }
+
+pub fn socket_addr_failed_to_resolve() -> io::Error {
+  io::Error::new(io::ErrorKind::AddrNotAvailable, "Socket address failed to resolve.")
+}

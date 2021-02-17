@@ -2,6 +2,7 @@ use std::net::UdpSocket;
 use std::io;
 
 use crossbeam::channel;
+use log::warn;
 
 use crate::error;
 use crate::Connection;
@@ -9,7 +10,7 @@ use crate::Service;
 use crate::types::{FromDaemon, ToDaemon};
 
 pub struct Listener {
-  rx: channel::Receiver<FromDaemon>
+  pub rx: channel::Receiver<FromDaemon>
 }
 
 impl Listener {
@@ -36,7 +37,7 @@ pub fn listen(service: &Service, socket: UdpSocket) -> io::Result<Listener> {
   match rx_from_daemon.recv() {
     // The expected case. Once the io has been confirmed, we can return a listener
     // which can accept() incoming connections.
-    Ok(FromDaemon::IORegistered) => {
+    Ok(FromDaemon::Listener) => {
       Ok(Listener {
         rx: rx_from_daemon
       })
@@ -45,6 +46,7 @@ pub fn listen(service: &Service, socket: UdpSocket) -> io::Result<Listener> {
     // This is unexpected. We only wanted an IORegistered message.
     // Close the given connection and signal the issue;
     Ok(FromDaemon::Connection(on_write, shared)) => {
+      warn!("When trying to register listener socket, received direct connection instead");
       let conn = Connection::new(on_write, shared);
       drop(conn);
       Err(error::unexpected_recv_from_daemon())

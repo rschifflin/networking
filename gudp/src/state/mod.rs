@@ -1,4 +1,5 @@
 use std::sync::{Arc, Mutex};
+use std::net::SocketAddr;
 use std::io;
 
 use crossbeam::channel;
@@ -23,16 +24,10 @@ pub struct State {
 }
 
 pub enum FSM {
-  Listen {
-    token: Token,
-    tx_to_service: channel::Sender<ToService>,
-    tx_on_write: channel::Sender<Token>,
-    waker: Arc<Waker>
-  },
   Handshaking {
     token: Token,
     tx_to_service: channel::Sender<ToService>,
-    tx_on_write: channel::Sender<Token>,
+    tx_on_write: channel::Sender<(Token, SocketAddr)>,
     waker: Arc<Waker>
   },
   Connected
@@ -42,29 +37,19 @@ impl State {
   // Returns None if unable to send the connection out to the client
   pub fn init_connect(
     token: Token,
+    peer_addr: SocketAddr,
     tx_to_service: channel::Sender<ToService>,
-    tx_on_write: channel::Sender<Token>,
+    tx_on_write: channel::Sender<(Token, SocketAddr)>,
     waker: Arc<Waker>,
     io: &MioUdpSocket) -> io::Result<State> {
 
     // TODO: In reality, this will be a clock controlled heartbeat, not a one-off hello
-    io.send(b"hello").map(|_| {
+    io.send_to(b"hello", peer_addr).map(|_| {
       State {
         shared: State::new_shared_state(),
         fsm: FSM::Handshaking { token, tx_to_service, tx_on_write, waker }
       }
     })
-  }
-
-  pub fn init_listen(
-    token: Token,
-    tx_to_service: channel::Sender<ToService>,
-    tx_on_write: channel::Sender<Token>,
-    waker: Arc<Waker>) -> State {
-    State {
-      shared: State::new_shared_state(),
-      fsm: FSM::Listen { token, tx_to_service, tx_on_write, waker }
-    }
   }
 
   fn new_shared_state() -> Arc<SharedConnState> {

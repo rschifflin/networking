@@ -7,7 +7,7 @@ use std::thread;
 use mio::{Poll, Events, Token, Waker};
 use crossbeam::channel;
 
-use crate::socket::Socket;
+use crate::socket::{Socket, PeerType};
 use crate::constants::{WAKE_TOKEN, CONFIG_BUF_SIZE_BYTES};
 use crate::types::ToDaemon as FromService;
 
@@ -47,15 +47,23 @@ pub fn spawn(mut poll: Poll, waker: Arc<Waker>, rx: channel::Receiver<FromServic
             for event in events.iter() {
               if event.token() != WAKE_TOKEN && event.is_writable() {
                 if let Entry::Occupied(token_entry) = token_map.entry(event.token()) {
-                  write_event::handle(token_entry, &mut buf_local, &mut poll);
+                  let socket = token_entry.get();
+                  match socket.peer_type {
+                    PeerType::Passive { .. /* peers, listen */} => { /* ... */ },
+                    PeerType::Direct(ref peer_addr, ref _state) => {
+                      let peer_addr = *peer_addr;
+                      drop(socket);
+                      write_event::handle(token_entry, peer_addr, &mut buf_local, &mut poll);
+                    }
+                  }
                 }
               }
             };
 
             // Handle user writes
-            for token in rx_write_events.try_iter() {
+            for (token, peer_addr) in rx_write_events.try_iter() {
               if let Entry::Occupied(token_entry) = token_map.entry(token) {
-                write_event::handle(token_entry, &mut buf_local, &mut poll);
+                write_event::handle(token_entry, peer_addr, &mut buf_local, &mut poll);
               }
             }
           },

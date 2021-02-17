@@ -1,4 +1,5 @@
 use std::collections::hash_map::OccupiedEntry;
+use std::net::SocketAddr;
 
 use mio::{Poll, Token};
 
@@ -8,10 +9,19 @@ use crate::socket::{Socket, PeerType};
 use crate::daemon::poll;
 
 type TokenEntry<'a> = OccupiedEntry<'a, Token, Socket>;
-pub fn handle(mut token_entry: TokenEntry, buf_local: &mut [u8], poll: &Poll) {
+pub fn handle(mut token_entry: TokenEntry, peer_addr: SocketAddr, buf_local: &mut [u8], poll: &Poll) {
   let socket = token_entry.get_mut();
   match &mut socket.peer_type {
-    PeerType::Direct(state) => {
+    PeerType::Passive { peers, listen } => {
+      match (peers.get_mut(&peer_addr), listen) {
+        (Some(mut state), _) => { /* handle the direct case as below */ },
+        (None, _) => { /* discard socket noise */ },
+      }
+    },
+
+    PeerType::Direct(addr, state) => {
+      // TODO: Do we care if addr != peer_addr here?
+
       let io = &mut socket.io;
       let (ref buf_read, ref buf_write, ref status) = *state.shared;
       // NOTE: Unlike the READ case, WRITEs never sleep on a condvar. If a write would overflow the write buffer, we
@@ -25,7 +35,7 @@ pub fn handle(mut token_entry: TokenEntry, buf_local: &mut [u8], poll: &Poll) {
 
       let buf = &mut *buf_write;
       let send_result = buf.with_front(buf_local, |buf_local, bytes| {
-        let send = io.send(&buf_local[..bytes]);
+        let send = io.send_to(&buf_local[..bytes], *addr);
         let opt = match send {
           Ok(_) => WithOpt::Pop,
           Err(_) => WithOpt::Peek

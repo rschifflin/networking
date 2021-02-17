@@ -1,5 +1,5 @@
 use std::sync::{Arc, Mutex};
-use std::net::UdpSocket;
+use std::net::{UdpSocket, SocketAddr};
 use std::io;
 
 use crossbeam::channel::Sender;
@@ -12,9 +12,12 @@ use crate::state::Status;
 #[allow(non_camel_case_types)]
 pub type READ_BUFFER_TAG = ();
 
-//TODO: Match on pairs of local:peer addrs; pub type AddrPair = (/*Local*/ SocketAddr, /*Remote*/ SocketAddr);
-
+// Conncetion callback on write
 pub type OnWrite = dyn Fn(usize) -> io::Result<usize> + Send;
+
+//TODO: Listener callback on close
+// pub type OnClose = dyn FnMut() + Send;
+
 pub type SharedConnState = (
   /*BufRead*/   CondMutex<Bring, READ_BUFFER_TAG>,
   /*BufWrite*/  Mutex<Bring>,
@@ -26,11 +29,10 @@ pub type SharedConnState = (
 #[derive(Debug)]
 pub enum ToDaemon {
   Listen(UdpSocket, Sender<FromDaemon>),
-  Connect(UdpSocket, Sender<FromDaemon>)
+  Connect(UdpSocket, Sender<FromDaemon>, SocketAddr)
 }
 
-//TODO: Put debug bound on F #[derive(Debug)]
 pub enum FromDaemon {
-  IORegistered,
+  Listener/*TODO: (Box<OnClose>)*/,
   Connection(Box<OnWrite>, Arc<SharedConnState>)
 }

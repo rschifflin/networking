@@ -12,7 +12,7 @@ use crate::error;
 type TokenEntry<'a> = OccupiedEntry<'a, Token, Socket>;
 
 pub fn handle(mut token_entry: TokenEntry, buf_local: &mut [u8], poll: &Poll) {
-  let socket = token_entry.get_mut();
+  let mut socket = token_entry.get_mut();
 
   // TODO: Read in loop until we hit WOULDBLOCK
   match socket.io.recv_from(buf_local) {
@@ -25,23 +25,42 @@ pub fn handle(mut token_entry: TokenEntry, buf_local: &mut [u8], poll: &Poll) {
 
         // Iterate thru all peers, removing them
         match socket.peer_type {
-          PeerType::Direct(/*TODO: addr,*/ ref mut state) => {
+          PeerType::Direct(_, ref mut state) => {
             let (ref buf_read, ref _buf_write, ref status) = *state.shared;
             // Must grab lock here first, see note below
             let buf = buf_read.lock().expect("Could not acquire unpoisoned read lock");
             status.set_io_err(errno);
             buf.notify_all();
             drop(buf);
-          }
+          },
+
+          PeerType::Passive { ref mut peers, ref mut listen } => {
+            for (_addr, peer_state) in peers.iter() {
+              let (ref buf_read, ref _buf_write, ref status) = *peer_state.shared;
+              let buf = buf_read.lock().expect("Could not acquire unpoisoned read lock");
+              status.set_io_err(errno);
+              buf.notify_all();
+              drop(buf);
+            }
+          },
         };
         poll::deregister_io(poll, &mut socket.io);
         token_entry.remove();
       }
     },
-    Ok((size, _peer_addr)) => {
+    Ok((size, peer_addr)) => {
       match socket.peer_type {
-        PeerType::Direct(/*TODO: ref addr,*/ ref mut state) => {
-          /* TODO: if (peer_addr != addr) { return; } // Discard irrelevant socket noise */
+        PeerType::Passive { ref mut peers, ref listen } => {
+          // if peer_addr is a member of peers
+          match (peers.get_mut(&peer_addr), listen) {
+            (Some(mut state), _) => { /* handle peer */ },
+            (None, Some(listen_opts)) => { /* create new peer */ },
+            (None, None) => return, // Discard socket noise
+          }
+        }
+
+        PeerType::Direct(addr, ref mut state) => {
+          if peer_addr != addr { return; } // Discard irrelevant socket noise */
           let (ref buf_read, ref buf_write, ref status) = *state.shared;
 
           // TODO: Should we handle a poisoned lock state here? IE if a thread with a connection panics,
@@ -70,7 +89,6 @@ pub fn handle(mut token_entry: TokenEntry, buf_local: &mut [u8], poll: &Poll) {
           }
 
           match &state.fsm {
-            FSM::Listen { token, tx_to_service, tx_on_write, waker } |
             FSM::Handshaking { token, tx_to_service, tx_on_write, waker } => {
               let on_write = {
                 let token = *token;
@@ -78,7 +96,7 @@ pub fn handle(mut token_entry: TokenEntry, buf_local: &mut [u8], poll: &Poll) {
                 let waker = Arc::clone(waker);
 
                 move |size| -> io::Result<usize> {
-                  tx_on_write.send(token).map_err(error::cannot_send_to_daemon)?;
+                  tx_on_write.send((token, peer_addr)).map_err(error::cannot_send_to_daemon)?;
                   waker.wake().map_err(error::wake_failed)?;
                   Ok(size)
                 }
@@ -87,13 +105,6 @@ pub fn handle(mut token_entry: TokenEntry, buf_local: &mut [u8], poll: &Poll) {
               match tx_to_service.send(ToService::Connection(Box::new(on_write), Arc::clone(&state.shared))) {
                 Ok(_) => {
                   buf.push_back(&mut buf_local[..size]).map(|_| buf.notify_one());
-                  if let FSM::Listen { .. } = state.fsm {
-                    // TODO: Write this into separate unshared daemon unbounded write buffer that doesn't require lock protection
-                    let mut buf_w = buf_write.lock().expect("Could not acquire unpoisoned write lock");
-                    buf_w.push_back(b"hello").expect("Could not write minimal hello! Write buffer too small!");
-                    drop(buf_w);
-                  }
-
                   state.fsm = FSM::Connected;
                   drop(buf);
                 },
