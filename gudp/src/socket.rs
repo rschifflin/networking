@@ -1,6 +1,6 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crossbeam::channel;
 
@@ -43,6 +43,7 @@ pub enum PeerType {
   Direct(SocketAddr, State),
   Passive {
     peers: HashMap<SocketAddr, State>,
-    listen: Option<ListenOpts>
+    pending_writes: HashSet<SocketAddr>,
+    listen: Option<ListenOpts>,
   }
 }

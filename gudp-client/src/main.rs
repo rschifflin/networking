@@ -37,7 +37,7 @@ fn on_accept(conn: gudp::Connection) {
   println!("Accepted connection on {} for messages from {}", src_port, dst_port);
   let mut buf = [0u8; 1000];
   loop {
-    let mut recv_len = conn.recv(&mut buf).expect("Failed to recv");
+    let recv_len = conn.recv(&mut buf).expect("Failed to recv");
     let recv_str = std::str::from_utf8(&buf[..recv_len]).expect("Did not recv utf8");
     println!("[From {}]: {}", dst_port, recv_str);
 

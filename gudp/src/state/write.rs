@@ -1,20 +1,22 @@
 use std::net::SocketAddr;
-use std::sync::Arc;
 use std::io;
 
 use mio::net::UdpSocket as MioUdpSocket;
-use bring::bounded::Bring;
 use bring::WithOpt;
 
-use crate::error;
-use crate::types::READ_BUFFER_TAG;
-use crate::types::FromDaemon as ToService;
-use crate::state::{State, Status, Closer, FSM};
+use crate::state::State;
 
 impl State {
-  pub fn write(&mut self, io: &mut MioUdpSocket, peer_addr: SocketAddr, buf_local: &mut [u8]) -> Result<(), Closer> {
+  // Returns...
+  //    Ok(True) when the state update + write succeeds
+  //    Ok(False) when the state update succeeds but write must block
+  //    Err(e) when an io error (other than WouldBlock) occurs on write
+  pub fn write(&mut self, io: &mut MioUdpSocket, peer_addr: SocketAddr, buf_local: &mut [u8]) -> io::Result<bool> {
     let (ref buf_read, ref buf_write, ref status) = *self.shared;
-    // TODO: Do we care about status here?
+    // TODO: Handle appropriate flushing behavior on closed ends:
+    //    - if peer is closed, discard writes and remove right away (app can still drain read buffer, app writes will fail)
+    //    - if app is closed, do not remove until writes are flushed
+    //    - if io is closed, remove right away and remove all siblings
 
     // TODO: Read in loop until we hit WOULDBLOCK
     let mut buf_write = buf_write.lock().expect("Could not acquire unpoisoned write lock");
@@ -32,25 +34,24 @@ impl State {
     drop(buf_write);
 
     match send_result {
-      // TODO: If our buf is too small, we should truncate or return Err:WriteZero.
+      // TODO: If our buf is too small, should we truncate? return Err:WriteZero?
       // Otherwise maybe change buflocal to a vec and only grow it if we get massive packets
-      None => Ok(()), // Nothing was on the ring or our buf was too small. Simply no-op the write
-      Some(Ok(_)) => Ok(()), // There was data on the buffer and we were able to pop it and send it!
+      None => Ok(true), // Nothing was on the ring or our buf was too small. Simply no-op the write
+      Some(Ok(_)) => Ok(true), // There was data on the buffer and we were able to pop it and send it!
       Some(Err(e)) => {
-        // TODO: Add a peer writer map for when we must signal as a writer
-        if e.kind() == std::io::ErrorKind::WouldBlock { Ok(()) } // There was data on the buffer but we would've blocked if we tried to send it, so we left it alone
+        if e.kind() == std::io::ErrorKind::WouldBlock { Ok(false) } // There was data on the buffer but we would've blocked if we tried to send it, so we left it alone
         else {
           // TODO: Handle errors explicitly. Set io_err_x flags based on errorkind
           // Add error flags we can set when we have a semantic error that has no underlying errno code.
           let errno = e.raw_os_error();
 
-          // NOTE: Needed to sync blocked readers before signalling that the connection is closed
+          // NOTE: Need to sync blocked readers by locking before signalling that the connection is closed
           let lock = buf_read.lock().expect("Could not acquire unpoisoned read lock");
           status.set_io_err(errno);
           lock.notify_all();
           drop(lock);
 
-          Err(Closer::IO)
+          Err(e)
         }
       }
     }

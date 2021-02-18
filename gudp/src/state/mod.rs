@@ -1,9 +1,7 @@
 use std::sync::{Arc, Mutex};
 use std::net::SocketAddr;
-use std::io;
 
 use crossbeam::channel;
-use mio::net::UdpSocket as MioUdpSocket;
 use mio::{Waker, Token};
 
 use bring::bounded::Bring;
@@ -13,7 +11,7 @@ use crate::types::SharedConnState;
 use crate::types::FromDaemon as ToService;
 use crate::constants::CONFIG_BUF_SIZE_BYTES;
 
-pub use status::{Status, Closer};
+pub use status::Status;
 mod status;
 mod read;
 mod write;

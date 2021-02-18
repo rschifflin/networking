@@ -2,16 +2,15 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::io;
 
-use bring::bounded::Bring;
-
-use crate::error;
-use crate::types::READ_BUFFER_TAG;
 use crate::types::FromDaemon as ToService;
-use crate::state::{State, Status, Closer, FSM};
+use crate::error;
+use crate::state::{State, FSM};
 
 impl State {
-  pub fn read(&mut self, local_addr: SocketAddr, peer_addr: SocketAddr, buf_local: &mut [u8], buf_size: usize) -> Result<(), Closer> {
-    let (ref buf_read, ref buf_write, ref status) = *self.shared;
+  // Returns true when the connection is updated
+  // Returns false when the connection is closed
+  pub fn read(&mut self, local_addr: SocketAddr, peer_addr: SocketAddr, buf_local: &mut [u8], buf_size: usize) -> bool {
+    let (ref buf_read, ref _buf_write, ref status) = *self.shared;
 
     // TODO: Should we handle a poisoned lock state here? IE if a thread with a connection panics,
     // what should the daemon do about it? Just close the connection?
@@ -30,9 +29,13 @@ impl State {
     // That means when the client DOES acquire the readlock, it will observe a closed status and not sleep.
     // Alternatively, if the client acquired the readlock first, it will sleep on the condvar before this fn can notify.
     // Thus ensuring it will hear the notification to wake up and observe the closed status.
-    if let (Some(closer)) = status.test_closed() {
+    if status.is_closed() {
+      // TODO: Handle appropriate flushing behavior on closed ends:
+      //    - if peer is closed, remove right away (app can still drain read buffer, app writes will fail)
+      //    - if app is closed, discard reads but do not remove until writes are flushed
+      //    - if io is closed, remove right away and remove all siblings
       buf.notify_all();
-      return Err(closer);
+      return false;
     }
 
     match &self.fsm {
@@ -53,20 +56,20 @@ impl State {
           Ok(_) => {
             buf.push_back(&mut buf_local[..buf_size]).map(|_| buf.notify_one());
             self.fsm = FSM::Connected;
-            Ok(())
+            true
           },
           Err(_) => {
             // Failed to create the connection. Deregister
             // NOTE: Setting status is technically not necessary, there is no clientside to observe this
             status.set_client_hup();
             buf.notify_all();
-            Err(Closer::Application)
+            false
           }
         }
       },
       FSM::Connected => {
         buf.push_back(&mut buf_local[..buf_size]).map(|_| buf.notify_one());
-        Ok(())
+        true
       }
     }
   }

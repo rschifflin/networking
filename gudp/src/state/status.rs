@@ -40,21 +40,10 @@ const FLAGS_HUP: u32 =
   FLAG_APP_HUP |
   FLAG_IO_HUP;
 
-const FLAGS_APP_CLOSER: u32 = FLAG_APP_HUP;
-const FLAGS_PEER_CLOSER: u32 = FLAG_IO_HUP;
-const FLAGS_IO_CLOSER: u32 = FLAG_IO_ERR;
-
 const ERRNO_CLEAR: i32 = 0;
 
 #[derive(Debug)]
 pub enum ClientStatus { Active }
-
-#[derive(Copy, Clone, Debug)]
-pub enum Closer {
-  Application,
-  Peer,
-  IO
-}
 
 #[derive(Debug)]
 pub struct Status {
@@ -102,20 +91,6 @@ impl Status {
   pub fn is_closed(&self) -> bool {
     (self.status.load(OSeqCst) & FLAGS_CLOSED) != 0
   }
-
-  pub fn test_closed(&self) -> Option<Closer> {
-    let status = self.status.load(OSeqCst);
-    if (status & FLAGS_APP_CLOSER) != 0 {
-      Some(Closer::Application)
-    } else if (status & FLAGS_PEER_CLOSER) != 0 {
-      Some(Closer::Peer)
-    } else if (status & FLAGS_IO_CLOSER) != 0 {
-      Some(Closer::IO)
-    } else {
-      None
-    }
-  }
-
 
   pub fn is_open(&self) -> bool {
     !self.is_closed()

@@ -1,19 +1,15 @@
 use std::collections::hash_map::OccupiedEntry;
 use std::sync::Arc;
-use std::io;
 use mio::{Poll, Token};
-use log::warn;
 
 use crate::socket::{Socket, PeerType};
-use crate::types::FromDaemon as ToService;
-use crate::state::{State, FSM, Closer};
+use crate::state::State;
 use crate::daemon::poll;
-use crate::error;
 
 type TokenEntry<'a> = OccupiedEntry<'a, Token, Socket>;
 
 pub fn handle(mut token_entry: TokenEntry, buf_local: &mut [u8], poll: &Poll) {
-  let mut socket = token_entry.get_mut();
+  let socket = token_entry.get_mut();
 
   // TODO: Read in loop until we hit WOULDBLOCK
   match socket.io.recv_from(buf_local) {
@@ -34,7 +30,7 @@ pub fn handle(mut token_entry: TokenEntry, buf_local: &mut [u8], poll: &Poll) {
             drop(buf);
           },
 
-          PeerType::Passive { ref mut peers, ref mut listen } => {
+          PeerType::Passive { ref mut peers, .. } => {
             for (_addr, peer_state) in peers.iter() {
               let (ref buf_read, ref _buf_write, ref status) = *peer_state.shared;
               let buf = buf_read.lock().expect("Could not acquire unpoisoned read lock");
@@ -51,15 +47,12 @@ pub fn handle(mut token_entry: TokenEntry, buf_local: &mut [u8], poll: &Poll) {
 
     Ok((size, peer_addr)) => {
       match socket.peer_type {
-        PeerType::Passive { ref mut peers, ref listen } => {
+        PeerType::Passive { ref mut peers, ref listen, .. } => {
           match (peers.get_mut(&peer_addr), listen) {
             /* Handle existing peer */
-            (Some(mut state), _) => {
-              if let Err(closer) = state.read(socket.local_addr, peer_addr, buf_local, size) {
+            (Some(state), _) => {
+              if !state.read(socket.local_addr, peer_addr, buf_local, size) {
                 peers.remove(&peer_addr); // Remove closed connection
-                if let Closer::IO = closer {
-                  warn!("IO error closed a connection, but only hup was expected! Other connections on this IO may linger");
-                }
 
                 // No peers left and not actively listening. Close and free the resource
                 if peers.len() == 0 && listen.is_none() {
@@ -77,10 +70,10 @@ pub fn handle(mut token_entry: TokenEntry, buf_local: &mut [u8], poll: &Poll) {
                 listen_opts.tx_on_write.clone(),
                 Arc::clone(&listen_opts.waker));
 
-              // If it fails, we simply don't insert the new peer
-              peer_state.read(socket.local_addr, peer_addr, buf_local, size).map(|_| {
+              // If state update fails, we simply don't insert the new peer
+              if peer_state.read(socket.local_addr, peer_addr, buf_local, size) {
                 peers.insert(peer_addr, peer_state);
-              });
+              };
             },
 
             (None, None) => return, // Discard unrecognized peer msgs when not listening
@@ -88,7 +81,7 @@ pub fn handle(mut token_entry: TokenEntry, buf_local: &mut [u8], poll: &Poll) {
         }
 
         PeerType::Direct(peer_addr, ref mut state) => {
-          if let Err(_) = state.read(socket.local_addr, peer_addr, buf_local, size) {
+          if !state.read(socket.local_addr, peer_addr, buf_local, size) {
             poll::deregister_io(poll, &mut socket.io);
             token_entry.remove();
           };

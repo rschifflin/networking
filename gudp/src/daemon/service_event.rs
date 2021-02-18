@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -46,9 +46,10 @@ pub fn handle(msg: FromService,
               let waker = Arc::clone(waker);
               let peers = HashMap::new();
               let listen = Some(ListenOpts::new(token, respond_tx, tx_on_write, waker));
+              let pending_writes = HashSet::new();
               token_map.insert(
                 token,
-                Socket::new(conn, local_addr, PeerType::Passive { peers, listen })
+                Socket::new(conn, local_addr, PeerType::Passive { peers, listen, pending_writes })
               );
             });
         },

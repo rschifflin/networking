@@ -25,7 +25,7 @@ pub fn handle_failure(e: io::Error, token_map: &mut HashMap<Token, Socket>) -> i
         drop(lock);
       }
 
-      PeerType::Passive { ref peers, ref listen } => {
+      PeerType::Passive { ref peers, .. } => {
         for (_addr, peer_state) in peers.iter() {
           let (ref buf_read, ref _buf_write, ref status) = *peer_state.shared;
           let lock = buf_read.lock().expect("Could not acquire unpoisoned read lock");
