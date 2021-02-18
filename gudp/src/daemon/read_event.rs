@@ -53,7 +53,6 @@ pub fn handle(mut token_entry: TokenEntry, buf_local: &mut [u8], poll: &Poll) {
             (Some(state), _) => {
               if !state.read(socket.local_addr, peer_addr, buf_local, size) {
                 peers.remove(&peer_addr); // Remove closed connection
-
                 // No peers left and not actively listening. Close and free the resource
                 if peers.len() == 0 && listen.is_none() {
                   poll::deregister_io(poll, &mut socket.io);

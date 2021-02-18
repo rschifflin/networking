@@ -16,9 +16,14 @@ pub fn handle(mut token_entry: TokenEntry, pending_write_keybuf: &mut Vec<Socket
         match (peers.get_mut(peer_addr), listen) {
           (Some(peer_state), _) => {
             match peer_state.write(&mut socket.io, *peer_addr, buf_local) {
+              // Success and still no blocking
               Ok(true) => { pending_writes.remove(peer_addr); },
+
+              // WouldBlock; stop for now awaiting next writeable event
               Ok(false) => { return; },
-              Err(e) => { // Deregister io
+
+              // Underlying IO failed. Stop and deregister
+              Err(e) => {
                 let errno = e.raw_os_error();
 
                 // peer_state.write already signals this conn's io error

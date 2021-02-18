@@ -6,6 +6,11 @@ use mio::{Poll, Token};
 use crate::socket::{Socket, PeerType};
 use crate::daemon::poll;
 
+// Handling app writes are subtly different than socket writeable events
+// In the case of a direct connection, the two are identical
+// In the case of a passive listener connection...
+//  App writes are only for a given peer, and add to the pending writers list on block.
+//  Writeable events walk the list and try to write for all pending writers of an io until the io would block again.
 type TokenEntry<'a> = OccupiedEntry<'a, Token, Socket>;
 pub fn handle(mut token_entry: TokenEntry, peer_addr: SocketAddr, buf_local: &mut [u8], poll: &Poll) {
   let socket = token_entry.get_mut();
