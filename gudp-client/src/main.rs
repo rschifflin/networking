@@ -24,10 +24,20 @@ fn main() {
 
 fn listen(listener: gudp::Listener, src_port: u16) {
   println!("Listening on {} for messages", src_port);
-  loop {
+  let mut n_remaining = 3;
+  let mut threads = vec![];
+
+  while n_remaining > 0 {
     let conn = listener.accept().expect("Could not accept connection on listener");
     conn.send(b"hello").expect("Failed to greet new peer");
-    std::thread::spawn(move || { on_accept(conn) });
+    threads.push(std::thread::spawn(move || { on_accept(conn) }));
+    n_remaining -= 1;
+  }
+
+  println!("Reached limit on accepting listener connections. Closing listener");
+  drop(listener);
+  for thread in threads {
+    thread.join().expect("Could not join accepted connection thread");
   }
 }
 
@@ -44,6 +54,11 @@ fn on_accept(conn: gudp::Connection) {
     if recv_str == "ping" {
       conn.send(b"pong").expect("Failed to send");
       println!("> pong");
+    }
+
+    if recv_str == "quit" {
+      println!("{} quit", dst_port);
+      break;
     }
   }
 }
