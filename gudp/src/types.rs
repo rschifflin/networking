@@ -12,8 +12,12 @@ use crate::state::Status;
 #[allow(non_camel_case_types)]
 pub type READ_BUFFER_TAG = ();
 
-// Conncetion callback on write
+// Connection callback on write
 pub type OnWrite = dyn Fn(usize) -> io::Result<usize> + Send;
+
+// Listener callback on close
+pub type OnClose = dyn FnMut() -> io::Result<()> + Send;
+
 
 //TODO: Listener callback on close
 // pub type OnClose = dyn FnMut() + Send;
@@ -33,6 +37,6 @@ pub enum ToDaemon {
 }
 
 pub enum FromDaemon {
-  Listener/*TODO: (Box<OnClose>)*/,
+  Listener(Box<OnClose>),
   Connection(Box<OnWrite>, Arc<SharedConnState>, (SocketAddr, SocketAddr))
 }

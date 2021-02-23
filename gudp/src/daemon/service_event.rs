@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::io;
 
 use crossbeam::channel;
 use mio::{Poll, Token, Waker};
@@ -10,11 +11,13 @@ use crate::types::FromDaemon as ToService;
 use crate::types::ToDaemon as FromService;
 use crate::state::State;
 use crate::daemon::poll;
+use crate::error;
 
 pub fn handle(msg: FromService,
   poll: &Poll,
   token_map: &mut HashMap<Token, Socket>,
   tx_on_write: &channel::Sender<(Token, SocketAddr)>,
+  tx_on_close: &channel::Sender<Token>,
   waker: &Arc<Waker>,
   next_conn_id: &mut usize) {
   match msg {
@@ -39,7 +42,17 @@ pub fn handle(msg: FromService,
       match poll::register_io(poll, io, next_conn_id) {
         Some((token, mut conn, local_addr)) => {
           // TODO: Build callback for listener with mpsc for listen_closed_events
-          respond_tx.send(ToService::Listener)
+          let on_close = {
+            let tx_on_close = tx_on_close.clone();
+            let waker = Arc::clone(waker);
+            move || -> io::Result<()> {
+              tx_on_close.send(token).map_err(error::cannot_send_to_daemon)?;
+              waker.wake().map_err(error::wake_failed)?;
+              Ok(())
+            }
+          };
+
+          respond_tx.send(ToService::Listener(Box::new(on_close)))
             .map_err(|_| poll::deregister_io(poll, &mut conn)).ok()
             .map(|_| {
               let tx_on_write = tx_on_write.clone();

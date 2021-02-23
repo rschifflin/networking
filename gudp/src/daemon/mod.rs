@@ -15,12 +15,18 @@ mod poll;
 mod service_event;
 mod read_event;
 mod write_event;
+mod listen_close_event;
 
 pub fn spawn(mut poll: Poll, waker: Arc<Waker>, rx: channel::Receiver<FromService>) -> io::Result<thread::JoinHandle<io::Error>> {
   thread::Builder::new()
     .name("gudp daemon".to_string())
     .spawn(move || -> io::Error {
+      // tx_on_write forwards callbacks from app connections after they call write
       let (tx_on_write, rx_write_events) = channel::unbounded();
+
+      // tx_on_close forwards callbacks from app listeners after they close
+      let (tx_on_close, rx_close_listener_events) = channel::unbounded();
+
       let mut events = Events::with_capacity(128); // 128 connections ought to be enough for anybody
       let mut next_conn_id = 1;
       let mut token_map: HashMap<Token, Socket> = HashMap::new();
@@ -34,7 +40,14 @@ pub fn spawn(mut poll: Poll, waker: Arc<Waker>, rx: channel::Receiver<FromServic
           Ok(()) => {
             // Clear out all msgs from service
             for msg in rx.try_iter() {
-              service_event::handle(msg, &poll, &mut token_map, &tx_on_write, &waker, &mut next_conn_id);
+              service_event::handle(
+                msg,
+                &poll,
+                &mut token_map,
+                &tx_on_write,
+                &tx_on_close,
+                &waker,
+                &mut next_conn_id);
             }
 
             // Handle reads
@@ -45,6 +58,13 @@ pub fn spawn(mut poll: Poll, waker: Arc<Waker>, rx: channel::Receiver<FromServic
                 }
               }
             };
+
+            // Handle listener close
+            for token in rx_close_listener_events.try_iter() {
+              if let Entry::Occupied(token_entry) = token_map.entry(token) {
+                listen_close_event::handle(token_entry, &poll);
+              }
+            }
 
             // Handle poll writeable
             for event in events.iter() {

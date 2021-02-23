@@ -7,13 +7,25 @@ use log::warn;
 use crate::error;
 use crate::Connection;
 use crate::Service;
-use crate::types::{FromDaemon, ToDaemon};
+use crate::types::{FromDaemon, ToDaemon, OnClose};
 
 pub struct Listener {
-  pub rx: channel::Receiver<FromDaemon>
+  on_close: Box<OnClose>,
+  pub rx: channel::Receiver<FromDaemon>,
+}
+
+impl Drop for Listener {
+  fn drop(&mut self) {
+    (self.on_close)().unwrap_or_else(|e| {
+      warn!("Could not close listening socket on drop: {}. Resource may leak!", e)
+    });
+  }
 }
 
 impl Listener {
+  pub fn new(on_close: Box<OnClose>, rx: channel::Receiver<FromDaemon>) -> Listener {
+    Listener { on_close, rx }
+  }
   // Block until connection is established or the daemon dies trying I guess
   // TODO: What happens when listeners drop before calling accept?? And what _should_ happen ideally?
   pub fn accept(&self) -> io::Result<Connection> {
@@ -37,8 +49,9 @@ pub fn listen(service: &Service, socket: UdpSocket) -> io::Result<Listener> {
   match rx_from_daemon.recv() {
     // The expected case. Once the io has been confirmed, we can return a listener
     // which can accept() incoming connections.
-    Ok(FromDaemon::Listener) => {
+    Ok(FromDaemon::Listener(on_close)) => {
       Ok(Listener {
+        on_close,
         rx: rx_from_daemon
       })
     },

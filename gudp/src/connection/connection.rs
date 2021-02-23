@@ -128,9 +128,9 @@ pub fn connect<A: ToSocketAddrs>(service: &Service, socket: UdpSocket, to_addr: 
 
       // This is unexpected. We only wanted a Connection message.
       // Close the given listener and signal the issue;
-      FromDaemon::Listener => {
+      FromDaemon::Listener(on_close) => {
         warn!("When trying to register directly connected socket, received Listener instead");
-        let listener = Listener { rx };
+        let listener = Listener::new(on_close, rx);
         drop(listener);
         Err(error::unexpected_recv_from_daemon())
       }
