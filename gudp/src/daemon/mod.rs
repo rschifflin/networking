@@ -1,8 +1,10 @@
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
+use std::net::SocketAddr;
 use std::sync::Arc;
 use std::io;
 use std::thread;
+use std::time::Instant;
 
 use mio::{Poll, Events, Token, Waker};
 use crossbeam::channel;
@@ -10,9 +12,11 @@ use crossbeam::channel;
 use crate::socket::Socket;
 use crate::constants::{WAKE_TOKEN, CONFIG_BUF_SIZE_BYTES};
 use crate::types::ToDaemon as FromService;
+use crate::timer::{self, Timers};
 
 mod poll;
 mod service_event;
+mod timeout_event;
 mod read_event;
 mod write_event;
 mod listen_close_event;
@@ -34,9 +38,12 @@ pub fn spawn(mut poll: Poll, waker: Arc<Waker>, rx: channel::Receiver<FromServic
 
       // A hacky alloc to iterate destructively on the keys of the pending_write hashset
       let mut pending_write_keybuf = Vec::with_capacity(128);
+      let mut timers: timer::List<(Token, SocketAddr)> = timer::List::new();
 
       loop {
-        match poll.poll(&mut events, None) {
+        let now = Instant::now();
+        let timeout = timers.when_next().and_then(|t| t.checked_duration_since(now));
+        match poll.poll(&mut events, timeout) {
           Ok(()) => {
             // Clear out all msgs from service
             for msg in rx.try_iter() {
@@ -54,7 +61,7 @@ pub fn spawn(mut poll: Poll, waker: Arc<Waker>, rx: channel::Receiver<FromServic
             for event in events.iter() {
               if event.token() != WAKE_TOKEN && event.is_readable() {
                 if let Entry::Occupied(token_entry) = token_map.entry(event.token()) {
-                  read_event::handle(token_entry, &mut buf_local, &mut poll);
+                  read_event::handle(token_entry, &mut buf_local, &mut poll, &mut timers);
                 }
               }
             };
@@ -79,6 +86,15 @@ pub fn spawn(mut poll: Poll, waker: Arc<Waker>, rx: channel::Receiver<FromServic
             for (token, peer_addr) in rx_write_events.try_iter() {
               if let Entry::Occupied(token_entry) = token_map.entry(token) {
                 write_event::handle_app(token_entry, peer_addr, &mut buf_local, &mut poll);
+              }
+            }
+
+            // Handle timeouts
+            // NOTE: Occurs last to allow time to fill the read buffer, last chance to ack heartbeat, etc if necessary
+            for (token, peer_addr) in timers.expire(Instant::now()) {
+              if let Entry::Occupied(token_entry) = token_map.entry(token) {
+                println!("Got timeout: {:?}", token);
+                timeout_event::handle(token_entry, peer_addr, &mut poll);
               }
             }
           },

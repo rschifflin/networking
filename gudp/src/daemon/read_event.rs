@@ -1,14 +1,17 @@
 use std::collections::hash_map::OccupiedEntry;
 use std::sync::Arc;
+use std::net::SocketAddr;
 use mio::{Poll, Token};
 
 use crate::socket::{Socket, PeerType};
 use crate::state::State;
 use crate::daemon::poll;
+use crate::timer::{self, Timers};
 
 type TokenEntry<'a> = OccupiedEntry<'a, Token, Socket>;
 
-pub fn handle(mut token_entry: TokenEntry, buf_local: &mut [u8], poll: &Poll) {
+pub fn handle(mut token_entry: TokenEntry, buf_local: &mut [u8], poll: &Poll, timers: &mut timer::List<(Token, SocketAddr)>) {
+  let token = *token_entry.key();
   let socket = token_entry.get_mut();
 
   // TODO: Read in loop until we hit WOULDBLOCK
@@ -71,6 +74,7 @@ pub fn handle(mut token_entry: TokenEntry, buf_local: &mut [u8], poll: &Poll) {
 
               // If state update fails, we simply don't insert the new peer
               if peer_state.read(socket.local_addr, peer_addr, buf_local, size) {
+                timers.add((token, peer_addr), std::time::Instant::now() + std::time::Duration::from_millis(10_000));
                 peers.insert(peer_addr, peer_state);
               };
             },

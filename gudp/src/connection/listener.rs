@@ -68,7 +68,7 @@ pub fn listen(service: &Service, socket: UdpSocket) -> io::Result<Listener> {
       })
     },
 
-    // This is unexpected. We only wanted an IORegistered message.
+    // This is unexpected. We only wanted a listener.
     // Close the given connection and signal the issue;
     Ok(FromDaemon::Connection(on_write, shared, id)) => {
       warn!("When trying to register listener socket, received direct connection instead");
