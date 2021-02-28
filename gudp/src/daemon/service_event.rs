@@ -12,22 +12,27 @@ use crate::types::FromDaemon as ToService;
 use crate::types::ToDaemon as FromService;
 use crate::state::State;
 use crate::daemon::poll;
+use crate::timer::{Expired, Timers};
 use crate::error;
 
-pub fn handle(msg: FromService,
+pub fn handle<'a, T>(msg: FromService,
   poll: &Poll,
+  timers: &'a mut T,
   token_map: &mut HashMap<Token, Socket>,
   tx_on_write: &channel::Sender<(Token, SocketAddr)>,
   tx_on_close: &channel::Sender<Token>,
   waker: &Arc<Waker>,
-  next_conn_id: &mut usize) {
+  next_conn_id: &mut usize)
+  where T: Timers<'a, Expired<'a, (Token, SocketAddr)>, (Token, SocketAddr)> {
+
   match msg {
     FromService::Connect(io, respond_tx, peer_addr) => {
       match poll::register_io(poll, io, next_conn_id) {
         Some((token, mut conn, local_addr)) => {
           let conn_opts = ConnOpts::new(token, respond_tx, tx_on_write.clone(), Arc::clone(waker));
           let now = Instant::now();
-          let state = State::init_connect(now, conn_opts);
+          let timer_id = (token, peer_addr);
+          let state = State::init(now, timer_id, timers, conn_opts);
           conn.send_to(b"hello", peer_addr).ok()
             .or_else(|| { poll::deregister_io(poll, &mut conn); None })
             .map(|_| {

@@ -1,13 +1,10 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::net::{UdpSocket, SocketAddr};
+use mio::Token;
 use std::io;
 
 use crossbeam::channel::Sender;
-
-use bring::bounded::Bring;
-use cond_mutex::CondMutex;
-
-use crate::state::Status;
+use crate::state::{self, Status};
 
 #[allow(non_camel_case_types)]
 pub type READ_BUFFER_TAG = ();
@@ -18,17 +15,12 @@ pub type OnWrite = dyn Fn(usize) -> io::Result<usize> + Send;
 // Listener callback on close
 pub type OnClose = dyn FnMut() -> io::Result<()> + Send;
 
+// The FSM uses values of this type transparently to register timer events
+// Corresponds to the local socket resource plus connected peer address
+pub type TimerId = (Token, SocketAddr);
 
 //TODO: Listener callback on close
 // pub type OnClose = dyn FnMut() + Send;
-
-pub type SharedConnState = (
-  /*BufRead*/   CondMutex<Bring, READ_BUFFER_TAG>,
-  /*BufWrite*/  Mutex<Bring>,
-
-  // Atomics
-  /*Status*/      Status,
-);
 
 #[derive(Debug)]
 pub enum ToDaemon {
@@ -38,5 +30,5 @@ pub enum ToDaemon {
 
 pub enum FromDaemon {
   Listener(Box<OnClose>),
-  Connection(Box<OnWrite>, Arc<SharedConnState>, (SocketAddr, SocketAddr))
+  Connection(Box<OnWrite>, Arc<state::Shared>, (SocketAddr, SocketAddr))
 }

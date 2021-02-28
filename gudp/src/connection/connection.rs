@@ -6,7 +6,8 @@ use log::warn;
 
 use crate::Service;
 use crate::Listener;
-use crate::types::{SharedConnState, OnWrite, FromDaemon, ToDaemon};
+use crate::types::{OnWrite, FromDaemon, ToDaemon};
+use crate::state;
 use crate::error;
 
 use std::io;
@@ -14,7 +15,7 @@ use std::io;
 // A user-facing GUDP Connection interface
 pub struct Connection {
   on_write: Box<OnWrite>,
-  shared: Arc<SharedConnState>,
+  shared: Arc<state::Shared>,
   id: (SocketAddr, SocketAddr)
 }
 
@@ -26,7 +27,7 @@ impl Drop for Connection {
 }
 
 impl Connection {
-    pub fn new(on_write: Box<OnWrite>, shared: Arc<SharedConnState>, id: (SocketAddr, SocketAddr)) -> Connection {
+    pub fn new(on_write: Box<OnWrite>, shared: Arc<state::Shared>, id: (SocketAddr, SocketAddr)) -> Connection {
       Connection { on_write, shared, id }
     }
 

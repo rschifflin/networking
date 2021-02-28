@@ -16,7 +16,7 @@ use crate::timer::{self, Timers};
 
 mod poll;
 mod service_event;
-mod timeout_event;
+mod timer_event;
 mod read_event;
 mod write_event;
 mod listen_close_event;
@@ -35,10 +35,12 @@ pub fn spawn(mut poll: Poll, waker: Arc<Waker>, rx: channel::Receiver<FromServic
       let mut next_conn_id = 1;
       let mut token_map: HashMap<Token, Socket> = HashMap::new();
       let mut buf_local = vec![0u8; CONFIG_BUF_SIZE_BYTES];
+      let mut timers: timer::List<(Token, SocketAddr)> = timer::List::new();
 
       // A hacky alloc to iterate destructively on the keys of the pending_write hashset
       let mut pending_write_keybuf = Vec::with_capacity(128);
-      let mut timers: timer::List<(Token, SocketAddr)> = timer::List::new();
+      // A hacky alloc to iterate destructively on the expired timers
+      let mut expired_timers = Vec::with_capacity(128);
 
       loop {
         let now = Instant::now();
@@ -50,6 +52,7 @@ pub fn spawn(mut poll: Poll, waker: Arc<Waker>, rx: channel::Receiver<FromServic
               service_event::handle(
                 msg,
                 &poll,
+                &mut timers,
                 &mut token_map,
                 &tx_on_write,
                 &tx_on_close,
@@ -89,12 +92,13 @@ pub fn spawn(mut poll: Poll, waker: Arc<Waker>, rx: channel::Receiver<FromServic
               }
             }
 
-            // Handle timeouts
+            // Handle timer expiry
             // NOTE: Occurs last to allow time to fill the read buffer, last chance to ack heartbeat, etc if necessary
-            for (token, peer_addr) in timers.expire(Instant::now()) {
+            expired_timers.extend(timers.expire(Instant::now()));
+            for (token, peer_addr) in expired_timers.drain(..) {
               if let Entry::Occupied(token_entry) = token_map.entry(token) {
-                println!("Got timeout: {:?}", token);
-                timeout_event::handle(token_entry, peer_addr, &mut poll);
+                println!("Timer expired for {:?}", token);
+                timer_event::handle(token_entry, peer_addr, &mut poll, &mut timers);
               }
             }
           },

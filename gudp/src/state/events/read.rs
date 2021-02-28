@@ -4,18 +4,22 @@ use std::io;
 use std::time::Instant;
 
 use crate::types::FromDaemon as ToService;
+use crate::types::TimerId;
 use crate::error;
 use crate::state::{State, FSM};
+use crate::timer::{Expired, Timers};
 
 impl State {
   // Returns true when the connection is updated
   // Returns false when the connection is closed
-  pub fn read(&mut self,
+  pub fn read<'a, T>(&mut self,
     local_addr: SocketAddr,
     peer_addr: SocketAddr,
     buf_local: &mut [u8],
     buf_size: usize,
-    when: Instant) -> bool {
+    when: Instant,
+    timers: &mut T) -> bool
+  where T: Timers<'a, Expired<'a, TimerId>, TimerId> {
     let (ref buf_read, ref _buf_write, ref status) = *self.shared;
 
     // TODO: Should we handle a poisoned lock state here? IE if a thread with a connection panics,
