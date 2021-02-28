@@ -1,5 +1,6 @@
 use std::sync::{Arc, Mutex};
 use std::net::SocketAddr;
+use std::time::Instant;
 
 use crossbeam::channel;
 use mio::{Waker, Token};
@@ -10,6 +11,7 @@ use cond_mutex::CondMutex;
 use crate::types::SharedConnState;
 use crate::types::FromDaemon as ToService;
 use crate::constants::CONFIG_BUF_SIZE_BYTES;
+use crate::socket::ConnOpts;
 
 pub use status::Status;
 mod status;
@@ -20,31 +22,25 @@ mod write;
 /// Tracks all the behavior of a given socket
 pub struct State {
   pub shared: Arc<SharedConnState>,
+  pub last_recv: Instant,
   pub fsm: FSM
 }
 
 pub enum FSM {
   Handshaking {
-    token: Token,
-    tx_to_service: channel::Sender<ToService>,
-    tx_on_write: channel::Sender<(Token, SocketAddr)>,
-    waker: Arc<Waker>
+    conn_opts: ConnOpts,
   },
   Connected
 }
 
 impl State {
   // Returns None if unable to send the connection out to the client
-  pub fn init_connect(
-    token: Token,
-    tx_to_service: channel::Sender<ToService>,
-    tx_on_write: channel::Sender<(Token, SocketAddr)>,
-    waker: Arc<Waker>) -> State {
+  pub fn init_connect(when: Instant, conn_opts: ConnOpts) -> State {
 
-    // TODO: In reality, this will be a clock controlled heartbeat, not a one-off hello
     State {
       shared: State::new_shared_state(),
-      fsm: FSM::Handshaking { token, tx_to_service, tx_on_write, waker }
+      last_recv: when,
+      fsm: FSM::Handshaking { conn_opts }
     }
   }
 

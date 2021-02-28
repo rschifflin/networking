@@ -16,20 +16,21 @@ pub struct Socket {
   pub peer_type: PeerType
 }
 
-pub struct ListenOpts {
+#[derive(Clone, Debug)]
+pub struct ConnOpts {
   pub token: Token,
   pub tx_to_service: channel::Sender<ToService>,
   pub tx_on_write: channel::Sender<(Token, SocketAddr)>,
   pub waker: Arc<Waker>
 }
 
-impl ListenOpts {
+impl ConnOpts {
   pub fn new(
     token: Token,
     tx_to_service: channel::Sender<ToService>,
     tx_on_write: channel::Sender<(Token, SocketAddr)>,
-    waker: Arc<Waker>) -> ListenOpts {
-      ListenOpts { token, tx_to_service, tx_on_write, waker }
+    waker: Arc<Waker>) -> ConnOpts {
+      ConnOpts { token, tx_to_service, tx_on_write, waker }
   }
 }
 
@@ -44,6 +45,6 @@ pub enum PeerType {
   Passive {
     peers: HashMap<SocketAddr, State>,
     pending_writes: HashSet<SocketAddr>,
-    listen: Option<ListenOpts>,
+    listen: Option<ConnOpts>,
   }
 }

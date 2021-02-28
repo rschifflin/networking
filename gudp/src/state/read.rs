@@ -1,6 +1,7 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::io;
+use std::time::Instant;
 
 use crate::types::FromDaemon as ToService;
 use crate::error;
@@ -9,7 +10,12 @@ use crate::state::{State, FSM};
 impl State {
   // Returns true when the connection is updated
   // Returns false when the connection is closed
-  pub fn read(&mut self, local_addr: SocketAddr, peer_addr: SocketAddr, buf_local: &mut [u8], buf_size: usize) -> bool {
+  pub fn read(&mut self,
+    local_addr: SocketAddr,
+    peer_addr: SocketAddr,
+    buf_local: &mut [u8],
+    buf_size: usize,
+    when: Instant) -> bool {
     let (ref buf_read, ref _buf_write, ref status) = *self.shared;
 
     // TODO: Should we handle a poisoned lock state here? IE if a thread with a connection panics,
@@ -38,12 +44,13 @@ impl State {
       return false;
     }
 
-    match &self.fsm {
-      FSM::Handshaking { token, tx_to_service, tx_on_write, waker } => {
+    self.last_recv = when;
+    match &mut self.fsm {
+      FSM::Handshaking { conn_opts } => {
         let on_write = {
-          let token = *token;
-          let tx_on_write = tx_on_write.clone();
-          let waker = Arc::clone(waker);
+          let token = conn_opts.token;
+          let tx_on_write = conn_opts.tx_on_write.clone();
+          let waker = Arc::clone(&conn_opts.waker);
 
           move |size| -> io::Result<usize> {
             tx_on_write.send((token, peer_addr)).map_err(error::cannot_send_to_daemon)?;
@@ -52,7 +59,7 @@ impl State {
           }
         };
 
-        match tx_to_service.send(ToService::Connection(Box::new(on_write), Arc::clone(&self.shared), (local_addr, peer_addr))) {
+        match conn_opts.tx_to_service.send(ToService::Connection(Box::new(on_write), Arc::clone(&self.shared), (local_addr, peer_addr))) {
           Ok(_) => {
             buf.push_back(&mut buf_local[..buf_size]).map(|_| buf.notify_one());
             self.fsm = FSM::Connected;

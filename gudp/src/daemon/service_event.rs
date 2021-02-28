@@ -1,12 +1,13 @@
 use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Instant;
 use std::io;
 
 use crossbeam::channel;
 use mio::{Poll, Token, Waker};
 
-use crate::socket::{Socket, PeerType, ListenOpts};
+use crate::socket::{Socket, PeerType, ConnOpts};
 use crate::types::FromDaemon as ToService;
 use crate::types::ToDaemon as FromService;
 use crate::state::State;
@@ -24,9 +25,9 @@ pub fn handle(msg: FromService,
     FromService::Connect(io, respond_tx, peer_addr) => {
       match poll::register_io(poll, io, next_conn_id) {
         Some((token, mut conn, local_addr)) => {
-          let tx_on_write = tx_on_write.clone();
-          let waker = Arc::clone(waker);
-          let state = State::init_connect(token, respond_tx, tx_on_write, waker);
+          let conn_opts = ConnOpts::new(token, respond_tx, tx_on_write.clone(), Arc::clone(waker));
+          let now = Instant::now();
+          let state = State::init_connect(now, conn_opts);
           conn.send_to(b"hello", peer_addr).ok()
             .or_else(|| { poll::deregister_io(poll, &mut conn); None })
             .map(|_| {
@@ -58,7 +59,7 @@ pub fn handle(msg: FromService,
               let tx_on_write = tx_on_write.clone();
               let waker = Arc::clone(waker);
               let peers = HashMap::new();
-              let listen = Some(ListenOpts::new(token, respond_tx, tx_on_write, waker));
+              let listen = Some(ConnOpts::new(token, respond_tx, tx_on_write, waker));
               let pending_writes = HashSet::new();
               token_map.insert(
                 token,
