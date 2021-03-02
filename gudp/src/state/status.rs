@@ -14,6 +14,7 @@ use std::io;
 
 use crate::error;
 
+// TODO: Rename xxx_client_yyy to xxx_app_yyy
 // The client gracefully dropped their end of the connection
 // IO can still be flushed to the socket before the connection ends.
 const FLAG_APP_HUP: u32 = 1u32.rotate_right(1);

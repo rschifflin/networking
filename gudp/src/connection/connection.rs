@@ -16,7 +16,7 @@ use std::io;
 pub struct Connection {
   on_write: Box<OnWrite>,
   shared: Arc<state::Shared>,
-  id: (SocketAddr, SocketAddr)
+  id: (SocketAddr, SocketAddr) // Local addr, Peer Addr
 }
 
 impl Drop for Connection {
