@@ -14,9 +14,6 @@ pub type OnWrite = dyn Fn(usize) -> io::Result<usize> + Send;
 // Listener callback on close
 pub type OnClose = dyn FnMut() -> io::Result<()> + Send;
 
-//TODO: Listener callback on close
-// pub type OnClose = dyn FnMut() + Send;
-
 #[derive(Debug)]
 pub enum ToDaemon {
   Listen(UdpSocket, Sender<FromDaemon>),

@@ -1,14 +1,20 @@
 use std::time::Instant;
 
 mod list;
-// pub struct SystemClock();
-
 pub use list::TimerList as List;
 pub use list::Expired as Expired;
 
 /// Monotonic non-decreasing clock
 pub trait Clock {
   fn now(&self) -> Instant;
+}
+
+pub struct SystemClock();
+
+impl Clock for SystemClock {
+  fn now(&self) -> Instant {
+    Instant::now()
+  }
 }
 
 pub trait Timers<'a> {

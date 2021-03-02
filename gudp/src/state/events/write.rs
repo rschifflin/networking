@@ -1,21 +1,20 @@
 use std::net::SocketAddr;
 use std::io;
-use std::time::Instant;
 
 use mio::net::UdpSocket as MioUdpSocket;
 use bring::WithOpt;
 
 use crate::state::State;
-use crate::timer::{Timers, TimerKind};
+use crate::timer::{Timers, TimerKind, Clock};
 use crate::daemon::LoopLocalState;
+use crate::constants::time_ms;
 
-// TODO: Give state a SystemClock instead of passing in whens...
 impl State {
   // Returns...
   //    Ok(True) when the state update + write succeeds
   //    Ok(False) when the state update succeeds but write must block
   //    Err(e) when an io error (other than WouldBlock) occurs on write
-  pub fn write(&mut self, io: &mut MioUdpSocket, peer_addr: SocketAddr, when: Instant, s: &mut LoopLocalState) -> io::Result<bool> {
+  pub fn write(&mut self, io: &mut MioUdpSocket, peer_addr: SocketAddr, s: &mut LoopLocalState) -> io::Result<bool> {
     let (ref buf_read, ref buf_write, ref status) = *self.shared;
     // TODO: Handle appropriate flushing behavior on closed ends:
     //    - if peer is closed, discard writes and remove right away (app can still drain read buffer, app writes will fail)
@@ -42,9 +41,10 @@ impl State {
       // Otherwise maybe change buflocal to a vec and only grow it if we get massive packets
       None => Ok(true), // Nothing was on the ring or our buf was too small. Simply no-op the write
       Some(Ok(_)) => {
-        s.timers.remove((self.socket_id, TimerKind::Heartbeat), self.last_send + std::time::Duration::from_millis(1_000));
+        s.timers.remove((self.socket_id, TimerKind::Heartbeat), self.last_send + time_ms::T_1000);
+        let when = s.clock.now();
         self.last_send = when;
-        s.timers.add((self.socket_id, TimerKind::Heartbeat), when + std::time::Duration::from_millis(1_000));
+        s.timers.add((self.socket_id, TimerKind::Heartbeat), when + time_ms::T_1000);
         Ok(true)
       }, // There was data on the buffer and we were able to pop it and send it!
       Some(Err(e)) => {

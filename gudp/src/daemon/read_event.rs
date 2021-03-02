@@ -1,5 +1,4 @@
 use std::collections::hash_map::OccupiedEntry;
-use std::time::Instant;
 use mio::Token;
 
 use crate::socket::{Socket, PeerType};
@@ -46,13 +45,12 @@ pub fn handle(mut token_entry: TokenEntry, s: &mut LoopLocalState) {
     },
 
     Ok((size, peer_addr)) => {
-      let when = Instant::now();
       match socket.peer_type {
         PeerType::Passive { ref mut peers, ref listen, .. } => {
           match (peers.get_mut(&peer_addr), listen) {
             /* Handle existing peer */
             (Some(state), _) => {
-              if !state.read(socket.local_addr, peer_addr, size, when, s) {
+              if !state.read(socket.local_addr, peer_addr, size, s) {
                 peers.remove(&peer_addr); // Remove closed connection
                 // No peers left and not actively listening. Close and free the resource
                 if peers.len() == 0 && listen.is_none() {
@@ -65,10 +63,10 @@ pub fn handle(mut token_entry: TokenEntry, s: &mut LoopLocalState) {
             /* create+handle new peer */
             (None, Some(conn_opts)) => {
               let socket_id = (token, peer_addr);
-              let mut peer_state = State::init(when, socket_id, conn_opts.clone(), s);
+              let mut peer_state = State::init(socket_id, conn_opts.clone(), s);
 
               // If state update fails, we simply don't insert the new peer
-              if peer_state.read(socket.local_addr, peer_addr, size, when, s) {
+              if peer_state.read(socket.local_addr, peer_addr, size, s) {
                 peers.insert(peer_addr, peer_state);
               };
             },
@@ -78,7 +76,7 @@ pub fn handle(mut token_entry: TokenEntry, s: &mut LoopLocalState) {
         }
 
         PeerType::Direct(peer_addr, ref mut state) => {
-          if !state.read(socket.local_addr, peer_addr, size, when, s) {
+          if !state.read(socket.local_addr, peer_addr, size, s) {
             poll::deregister_io(&mut socket.io, s);
             token_entry.remove();
           };

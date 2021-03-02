@@ -1,6 +1,5 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use std::time::Instant;
 use std::io;
 
 use mio::Token;
@@ -19,9 +18,8 @@ pub fn handle(msg: FromService, token_map: &mut HashMap<Token, Socket>, s: &mut 
       match poll::register_io(io, s) {
         Some((token, conn, local_addr)) => {
           let conn_opts = ConnOpts::new(token, respond_tx, s.tx_on_write.clone(), Arc::clone(&s.waker));
-          let now = Instant::now();
           let socket_id = (token, peer_addr);
-          let state = State::init(now, socket_id, conn_opts, s);
+          let state = State::init(socket_id, conn_opts, s);
           let socket = Socket::new(conn, local_addr, PeerType::Direct(peer_addr, state));
           token_map.insert(token, socket);
         }

@@ -1,6 +1,5 @@
 use std::collections::hash_map::OccupiedEntry;
 use std::net::SocketAddr;
-use std::time::Instant;
 
 use mio::Token;
 
@@ -15,12 +14,11 @@ use crate::daemon::{LoopLocalState, poll};
 type TokenEntry<'a> = OccupiedEntry<'a, Token, Socket>;
 pub fn handle(mut token_entry: TokenEntry, peer_addr: SocketAddr, s: &mut LoopLocalState) {
   let socket = token_entry.get_mut();
-  let when = Instant::now();
   match &mut socket.peer_type {
     PeerType::Passive { peers, listen, pending_writes } => {
       match (peers.get_mut(&peer_addr), listen) {
         (Some(peer_state), _) => {
-          match peer_state.write(&mut socket.io, peer_addr, when, s) {
+          match peer_state.write(&mut socket.io, peer_addr, s) {
             Ok(true) => { pending_writes.remove(&peer_addr); },
             Ok(false) => { pending_writes.insert(peer_addr); },
             Err(e) => { // Deregister io
@@ -48,7 +46,7 @@ pub fn handle(mut token_entry: TokenEntry, peer_addr: SocketAddr, s: &mut LoopLo
       }
     },
     PeerType::Direct(addr, state) => {
-      match state.write(&mut socket.io, *addr, when, s) {
+      match state.write(&mut socket.io, *addr, s) {
         // If we receive wouldblock that's ok, since this peer is 1:1 with the underlying io
         // and will be chosen to write when the io becomes writable
         Ok(_) => (),

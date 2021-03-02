@@ -9,12 +9,9 @@ use mio::{Poll, Events, Token, Waker};
 use crossbeam::channel;
 
 use crate::socket::{self, Socket};
-use crate::constants::{WAKE_TOKEN, CONFIG_BUF_SIZE_BYTES};
+use crate::constants::{time_ms, WAKE_TOKEN, CONFIG_BUF_SIZE_BYTES};
 use crate::types::ToDaemon as FromService;
-use crate::timer::{self, Timers, TimerKind};
-
-const TIME_ZERO: Duration = Duration::from_millis(0);
-const TIME_IOTA: Duration = Duration::from_millis(10);
+use crate::timer::{self, Timers, TimerKind, SystemClock};
 
 mod poll;
 mod service_event;
@@ -31,7 +28,8 @@ pub struct LoopLocalState {
   pub tx_on_close: channel::Sender<Token>,
   pub next_conn_id: usize,
   pub buf_local: Vec<u8>,
-  pub timers: timer::List<(socket::Id, TimerKind)>
+  pub timers: timer::List<(socket::Id, TimerKind)>,
+  pub clock: SystemClock
 }
 
 pub fn spawn(poll: Poll, waker: Arc<Waker>, rx: channel::Receiver<FromService>) -> io::Result<thread::JoinHandle<io::Error>> {
@@ -57,7 +55,8 @@ pub fn spawn(poll: Poll, waker: Arc<Waker>, rx: channel::Receiver<FromService>) 
         tx_on_close,
         next_conn_id: 1,
         buf_local,
-        timers
+        timers,
+        clock: SystemClock()
       };
 
       // A hacky alloc to iterate with mutation on the keys of the pending_write hashset
@@ -69,8 +68,8 @@ pub fn spawn(poll: Poll, waker: Arc<Waker>, rx: channel::Receiver<FromService>) 
         let timeout = loop_local_state.timers.when_next().map(|t| {
           let now = Instant::now();
           t.checked_duration_since(now)
-            .map(|timeout| Duration::max(timeout, TIME_IOTA))
-            .unwrap_or(TIME_ZERO)
+            .map(|timeout| Duration::max(timeout, time_ms::IOTA))
+            .unwrap_or(time_ms::ZERO)
         });
 
         match loop_local_state.poll.poll(&mut events, timeout) {

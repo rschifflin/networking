@@ -1,19 +1,14 @@
-use std::time::Instant;
-
 use crate::socket::{self, ConnOpts};
 use crate::state::{State, FSM, shared};
-use crate::timer::{Timers, TimerKind};
+use crate::timer::{Timers, TimerKind, Clock};
 use crate::daemon::LoopLocalState;
+use crate::constants::time_ms;
 
 impl State {
-  pub fn init(when: Instant, socket_id: socket::Id, conn_opts: ConnOpts, s: &mut LoopLocalState) -> State {
-    s.timers.add(
-      (socket_id, TimerKind::Timeout),
-      when + std::time::Duration::from_millis(5_000));
-    s.timers.add(
-      (socket_id, TimerKind::Heartbeat),
-      // TODO: Move zero-duration into constants
-      when + std::time::Duration::from_millis(0));
+  pub fn init(socket_id: socket::Id, conn_opts: ConnOpts, s: &mut LoopLocalState) -> State {
+    let when = s.clock.now();
+    s.timers.add((socket_id, TimerKind::Timeout), when + time_ms::T_5000);
+    s.timers.add((socket_id, TimerKind::Heartbeat), when + time_ms::ZERO);
 
     State {
       shared: shared::new(),

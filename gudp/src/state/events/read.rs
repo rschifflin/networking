@@ -1,18 +1,18 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::io;
-use std::time::Instant;
 
 use crate::types::FromDaemon as ToService;
 use crate::error;
 use crate::state::{State, FSM};
-use crate::timer::{Timers, TimerKind};
+use crate::timer::{Timers, TimerKind, Clock};
 use crate::daemon::LoopLocalState;
+use crate::constants::time_ms;
 
 impl State {
   // Returns true when the connection is updated
   // Returns false when the connection is closed
-  pub fn read(&mut self, local_addr: SocketAddr, peer_addr: SocketAddr, size: usize, when: Instant, s: &mut LoopLocalState) -> bool {
+  pub fn read(&mut self, local_addr: SocketAddr, peer_addr: SocketAddr, size: usize, s: &mut LoopLocalState) -> bool {
     let (ref buf_read, ref _buf_write, ref status) = *self.shared;
 
     // TODO: Should we handle a poisoned lock state here? IE if a thread with a connection panics,
@@ -41,9 +41,10 @@ impl State {
       return false;
     }
 
-    s.timers.remove((self.socket_id, TimerKind::Timeout), self.last_recv + std::time::Duration::from_millis(5_000));
+    s.timers.remove((self.socket_id, TimerKind::Timeout), self.last_recv + time_ms::T_5000);
+    let when = s.clock.now();
     self.last_recv = when;
-    s.timers.add((self.socket_id, TimerKind::Timeout), when + std::time::Duration::from_millis(5_000));
+    s.timers.add((self.socket_id, TimerKind::Timeout), when + time_ms::T_5000);
 
     match &mut self.fsm {
       FSM::Handshaking { conn_opts } => {
