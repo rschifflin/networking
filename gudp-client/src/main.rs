@@ -24,13 +24,25 @@ fn main() {
 
 fn listen(listener: gudp::Listener, src_port: u16) {
   println!("Listening on {} for messages", src_port);
-  let mut n_remaining = 3;
+  let mut n_remaining: Option<usize> = None;
   let mut threads = vec![];
 
-  while n_remaining > 0 {
-    let conn = listener.accept().expect("Could not accept connection on listener");
-    threads.push(std::thread::spawn(move || { on_accept(conn) }));
-    n_remaining -= 1;
+  loop {
+    match n_remaining {
+      // If we eventually run out of connections, break and join all threads before exiting
+      Some(n) if n <= 0 => break,
+      Some(ref mut n) => {
+        let conn = listener.accept().expect("Could not accept connection on listener");
+        threads.push(std::thread::spawn(move || { on_accept(conn) }));
+        *n -= 1;
+      },
+
+      // If we handle unlimited connections, simply loop forever and discard join handles
+      None => {
+        let conn = listener.accept().expect("Could not accept connection on listener");
+        std::thread::spawn(move || { on_accept(conn) });
+      }
+    }
   }
 
   println!("Reached limit on accepting listener connections. Closing listener");

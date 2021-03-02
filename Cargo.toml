@@ -2,9 +2,14 @@
 
 members = [
   "gudp-client",
+  "gudp-chaingun",
   "gudp",
   "slice-pair",
   "bring",
   "cond-mutex",
   "xor"
+]
+
+default-members = [
+  "gudp-client"
 ]

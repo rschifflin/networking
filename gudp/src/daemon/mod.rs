@@ -36,7 +36,7 @@ pub fn spawn(poll: Poll, waker: Arc<Waker>, rx: channel::Receiver<FromService>) 
   thread::Builder::new()
     .name("gudp daemon".to_string())
     .spawn(move || -> io::Error {
-      let mut events = Events::with_capacity(128); // 128 connections ought to be enough for anybody
+      let mut events = Events::with_capacity(1024); // 1024 connections ought to be enough for anybody
       let mut token_map: HashMap<Token, Socket> = HashMap::new();
 
       // tx_on_write forwards callbacks from app connections after they call write
@@ -60,9 +60,9 @@ pub fn spawn(poll: Poll, waker: Arc<Waker>, rx: channel::Receiver<FromService>) 
       };
 
       // A hacky alloc to iterate with mutation on the keys of the pending_write hashset
-      let mut pending_write_keybuf = Vec::with_capacity(128);
+      let mut pending_write_keybuf = Vec::with_capacity(1024);
       // A hacky alloc to iterate with mutation on expired timers
-      let mut expired_timers = Vec::with_capacity(128);
+      let mut expired_timers = Vec::with_capacity(1024);
 
       loop {
         let timeout = loop_local_state.timers.when_next().map(|t| {
