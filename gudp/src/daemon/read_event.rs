@@ -1,26 +1,18 @@
 use std::collections::hash_map::OccupiedEntry;
-use std::sync::Arc;
-use std::net::SocketAddr;
 use std::time::Instant;
-use mio::{Poll, Token};
+use mio::Token;
 
-use crate::socket::{self, Socket, PeerType};
+use crate::socket::{Socket, PeerType};
 use crate::state::State;
-use crate::daemon::poll;
-use crate::types::Expired;
-use crate::timer::{Timers, TimerKind};
+use crate::daemon::{LoopLocalState, poll};
 
 type TokenEntry<'a> = OccupiedEntry<'a, Token, Socket>;
-pub fn handle<'a, T>(mut token_entry: TokenEntry, buf_local: &mut [u8], poll: &Poll, timers: &'a mut T)
-  where T: Timers<'a,
-    Item = (socket::Id, TimerKind),
-    Expired = Expired<'a, T>> {
-
+pub fn handle(mut token_entry: TokenEntry, s: &mut LoopLocalState) {
   let token = *token_entry.key();
   let socket = token_entry.get_mut();
 
   // TODO: Read in loop until we hit WOULDBLOCK
-  match socket.io.recv_from(buf_local) {
+  match socket.io.recv_from(&mut s.buf_local) {
     Err(e) => {
       if e.kind() == std::io::ErrorKind::WouldBlock {} // This is fine for mio, try again later
       else {
@@ -48,7 +40,7 @@ pub fn handle<'a, T>(mut token_entry: TokenEntry, buf_local: &mut [u8], poll: &P
             }
           },
         };
-        poll::deregister_io(poll, &mut socket.io);
+        poll::deregister_io(&mut socket.io, s);
         token_entry.remove();
       }
     },
@@ -60,11 +52,11 @@ pub fn handle<'a, T>(mut token_entry: TokenEntry, buf_local: &mut [u8], poll: &P
           match (peers.get_mut(&peer_addr), listen) {
             /* Handle existing peer */
             (Some(state), _) => {
-              if !state.read(socket.local_addr, peer_addr, buf_local, size, when, timers) {
+              if !state.read(socket.local_addr, peer_addr, size, when, s) {
                 peers.remove(&peer_addr); // Remove closed connection
                 // No peers left and not actively listening. Close and free the resource
                 if peers.len() == 0 && listen.is_none() {
-                  poll::deregister_io(poll, &mut socket.io);
+                  poll::deregister_io(&mut socket.io, s);
                   token_entry.remove();
                 }
               };
@@ -73,10 +65,10 @@ pub fn handle<'a, T>(mut token_entry: TokenEntry, buf_local: &mut [u8], poll: &P
             /* create+handle new peer */
             (None, Some(conn_opts)) => {
               let socket_id = (token, peer_addr);
-              let mut peer_state = State::init(when, socket_id, timers, conn_opts.clone());
+              let mut peer_state = State::init(when, socket_id, conn_opts.clone(), s);
 
               // If state update fails, we simply don't insert the new peer
-              if peer_state.read(socket.local_addr, peer_addr, buf_local, size, when, timers) {
+              if peer_state.read(socket.local_addr, peer_addr, size, when, s) {
                 peers.insert(peer_addr, peer_state);
               };
             },
@@ -86,8 +78,8 @@ pub fn handle<'a, T>(mut token_entry: TokenEntry, buf_local: &mut [u8], poll: &P
         }
 
         PeerType::Direct(peer_addr, ref mut state) => {
-          if !state.read(socket.local_addr, peer_addr, buf_local, size, when, timers) {
-            poll::deregister_io(poll, &mut socket.io);
+          if !state.read(socket.local_addr, peer_addr, size, when, s) {
+            poll::deregister_io(&mut socket.io, s);
             token_entry.remove();
           };
         }

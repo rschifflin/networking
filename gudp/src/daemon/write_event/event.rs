@@ -2,16 +2,13 @@ use std::collections::hash_map::OccupiedEntry;
 use std::net::SocketAddr;
 use std::time::Instant;
 
-use mio::{Poll, Token};
+use mio::Token;
 
-use crate::socket::{self, Socket, PeerType};
-use crate::daemon::poll;
-use crate::types::Expired;
-use crate::timer::{Timers, TimerKind};
+use crate::socket::{Socket, PeerType};
+use crate::daemon::{LoopLocalState, poll};
 
 type TokenEntry<'a> = OccupiedEntry<'a, Token, Socket>;
-pub fn handle<'a, T>(mut token_entry: TokenEntry, pending_write_keybuf: &mut Vec<SocketAddr>, buf_local: &mut [u8], poll: &Poll, timers: &'a mut T)
-where T: Timers<'a, Item = (socket::Id, TimerKind), Expired = Expired<'a, T>> {
+pub fn handle(mut token_entry: TokenEntry, pending_write_keybuf: &mut Vec<SocketAddr>, s: &mut LoopLocalState) {
   let socket = token_entry.get_mut();
   let when = Instant::now();
   match &mut socket.peer_type {
@@ -20,7 +17,7 @@ where T: Timers<'a, Item = (socket::Id, TimerKind), Expired = Expired<'a, T>> {
       for peer_addr in pending_write_keybuf.iter() {
         match (peers.get_mut(peer_addr), listen) {
           (Some(peer_state), _) => {
-            match peer_state.write(&mut socket.io, *peer_addr, buf_local, when, timers) {
+            match peer_state.write(&mut socket.io, *peer_addr, when, s) {
               // Success and still no blocking
               Ok(true) => { pending_writes.remove(peer_addr); },
 
@@ -43,7 +40,7 @@ where T: Timers<'a, Item = (socket::Id, TimerKind), Expired = Expired<'a, T>> {
                   drop(buf);
                 }
 
-                poll::deregister_io(poll, &mut socket.io);
+                poll::deregister_io(&mut socket.io, s);
                 token_entry.remove();
                 return;
               }
@@ -55,13 +52,13 @@ where T: Timers<'a, Item = (socket::Id, TimerKind), Expired = Expired<'a, T>> {
     },
 
     PeerType::Direct(addr, state) => {
-      match state.write(&mut socket.io, *addr, buf_local, when, timers) {
+      match state.write(&mut socket.io, *addr, when, s) {
         // If we receive wouldblock that's ok, since this peer is 1:1 with the underlying io
         // and will be chosen to write when the io becomes writable
         Ok(_) => (),
         Err(_) => {
           // Deregister io
-          poll::deregister_io(poll, &mut socket.io);
+          poll::deregister_io(&mut socket.io, s);
           token_entry.remove();
         }
       }

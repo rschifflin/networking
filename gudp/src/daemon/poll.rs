@@ -4,9 +4,10 @@ use std::net::UdpSocket as StdUdpSocket;
 use std::net::SocketAddr;
 
 use log::warn;
-use mio::{Poll, Token, Interest};
+use mio::{Token, Interest};
 use mio::net::UdpSocket as MioUdpSocket;
 
+use crate::daemon::LoopLocalState;
 use crate::socket::{Socket, PeerType};
 
 pub fn handle_failure(e: io::Error, token_map: &mut HashMap<Token, Socket>) -> io::Error {
@@ -40,16 +41,16 @@ pub fn handle_failure(e: io::Error, token_map: &mut HashMap<Token, Socket>) -> i
   e
 }
 
-pub fn register_io(poll: &Poll, io: StdUdpSocket, next_conn_id: &mut usize) -> Option<(Token, MioUdpSocket, SocketAddr)> {
+pub fn register_io(io: StdUdpSocket, s: &mut LoopLocalState) -> Option<(Token, MioUdpSocket, SocketAddr)> {
   // Create a mio wrapper for the socket.
   let mut conn = MioUdpSocket::from_std(io);
 
   // Associate this io with a token
-  let token = Token(*next_conn_id);
-  *next_conn_id += 1;
+  let token = Token(s.next_conn_id);
+  s.next_conn_id += 1;
 
   // Register this io with its token for polling
-  poll.registry()
+  s.poll.registry()
     .register(&mut conn, token, Interest::READABLE | Interest::WRITABLE)
     .and_then(|_| conn.local_addr())
     .map(|addr| (token, conn, addr))
@@ -60,8 +61,8 @@ pub fn register_io(poll: &Poll, io: StdUdpSocket, next_conn_id: &mut usize) -> O
 // For now, simply log if this occurs.
 // TODO: We could bubble up hanging resources to the main loop,
 // where we iterate on trying to deregister them.
-pub fn deregister_io(poll: &Poll, io: &mut MioUdpSocket) {
-  poll.registry().deregister(io).unwrap_or_else(|e| {
+pub fn deregister_io(io: &mut MioUdpSocket, s: &LoopLocalState) {
+  s.poll.registry().deregister(io).unwrap_or_else(|e| {
     warn!("Unable to deregister socket from poll on close. The socket fd may leak! Reason: {}", e);
   });
 }

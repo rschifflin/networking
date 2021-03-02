@@ -1,14 +1,6 @@
-use std::sync::{Arc, Mutex};
-use std::net::SocketAddr;
+use std::sync::Arc;
 use std::time::Instant;
 
-use crossbeam::channel;
-use mio::{Waker, Token};
-
-use bring::bounded::Bring;
-use cond_mutex::CondMutex;
-
-use crate::types::FromDaemon as ToService;
 use crate::socket::{self, ConnOpts};
 
 pub use status::Status;

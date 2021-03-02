@@ -1,42 +1,27 @@
 use std::collections::{HashMap, HashSet};
-use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Instant;
 use std::io;
 
-use crossbeam::channel;
-use mio::{Poll, Token, Waker};
+use mio::Token;
 
-use crate::socket::{self, Socket, PeerType, ConnOpts};
+use crate::socket::{Socket, PeerType, ConnOpts};
 use crate::types::FromDaemon as ToService;
 use crate::types::ToDaemon as FromService;
-use crate::types::Expired;
 use crate::state::State;
-use crate::daemon::poll;
-use crate::timer::{Timers, TimerKind};
+use crate::daemon::{LoopLocalState, poll};
 use crate::error;
 
 
-pub fn handle<'a, T>(msg: FromService,
-  poll: &Poll,
-  timers: &'a mut T,
-  token_map: &mut HashMap<Token, Socket>,
-  tx_on_write: &channel::Sender<socket::Id>,
-  tx_on_close: &channel::Sender<Token>,
-  waker: &Arc<Waker>,
-  next_conn_id: &mut usize)
-  where T: Timers<'a,
-    Item=(socket::Id, TimerKind),
-    Expired = Expired<'a, T>> {
-
+pub fn handle(msg: FromService, token_map: &mut HashMap<Token, Socket>, s: &mut LoopLocalState) {
   match msg {
     FromService::Connect(io, respond_tx, peer_addr) => {
-      match poll::register_io(poll, io, next_conn_id) {
-        Some((token, mut conn, local_addr)) => {
-          let conn_opts = ConnOpts::new(token, respond_tx, tx_on_write.clone(), Arc::clone(waker));
+      match poll::register_io(io, s) {
+        Some((token, conn, local_addr)) => {
+          let conn_opts = ConnOpts::new(token, respond_tx, s.tx_on_write.clone(), Arc::clone(&s.waker));
           let now = Instant::now();
           let socket_id = (token, peer_addr);
-          let state = State::init(now, socket_id, timers, conn_opts);
+          let state = State::init(now, socket_id, conn_opts, s);
           let socket = Socket::new(conn, local_addr, PeerType::Direct(peer_addr, state));
           token_map.insert(token, socket);
         }
@@ -45,11 +30,11 @@ pub fn handle<'a, T>(msg: FromService,
     }
 
     FromService::Listen(io, respond_tx) => {
-      match poll::register_io(poll, io, next_conn_id) {
+      match poll::register_io(io, s) {
         Some((token, mut conn, local_addr)) => {
           let on_close = {
-            let tx_on_close = tx_on_close.clone();
-            let waker = Arc::clone(waker);
+            let tx_on_close = s.tx_on_close.clone();
+            let waker = Arc::clone(&s.waker);
             move || -> io::Result<()> {
               tx_on_close.send(token).map_err(error::cannot_send_to_daemon)?;
               waker.wake().map_err(error::wake_failed)?;
@@ -58,10 +43,10 @@ pub fn handle<'a, T>(msg: FromService,
           };
 
           respond_tx.send(ToService::Listener(Box::new(on_close)))
-            .map_err(|_| poll::deregister_io(poll, &mut conn)).ok()
+            .map_err(|_| poll::deregister_io(&mut conn, s)).ok()
             .map(|_| {
-              let tx_on_write = tx_on_write.clone();
-              let waker = Arc::clone(waker);
+              let tx_on_write = s.tx_on_write.clone();
+              let waker = Arc::clone(&s.waker);
               let peers = HashMap::new();
               let listen = Some(ConnOpts::new(token, respond_tx, tx_on_write, waker));
               let pending_writes = HashSet::new();

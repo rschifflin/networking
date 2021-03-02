@@ -36,7 +36,7 @@ fn listen(listener: gudp::Listener, src_port: u16) {
   println!("Reached limit on accepting listener connections. Closing listener");
   drop(listener);
   for thread in threads {
-    thread.join().expect("Could not join accepted connection thread");
+    thread.join().expect("Could not join accepted connection thread").ok();
   }
 }
 

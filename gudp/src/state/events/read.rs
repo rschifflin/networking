@@ -4,23 +4,15 @@ use std::io;
 use std::time::Instant;
 
 use crate::types::FromDaemon as ToService;
-use crate::types::Expired;
 use crate::error;
-use crate::socket;
 use crate::state::{State, FSM};
 use crate::timer::{Timers, TimerKind};
+use crate::daemon::LoopLocalState;
 
 impl State {
   // Returns true when the connection is updated
   // Returns false when the connection is closed
-  pub fn read<'a, T>(&mut self,
-    local_addr: SocketAddr,
-    peer_addr: SocketAddr,
-    buf_local: &mut [u8],
-    buf_size: usize,
-    when: Instant,
-    timers: &mut T) -> bool
-  where T: Timers<'a, Item = (socket::Id, TimerKind), Expired = Expired<'a, T>> {
+  pub fn read(&mut self, local_addr: SocketAddr, peer_addr: SocketAddr, size: usize, when: Instant, s: &mut LoopLocalState) -> bool {
     let (ref buf_read, ref _buf_write, ref status) = *self.shared;
 
     // TODO: Should we handle a poisoned lock state here? IE if a thread with a connection panics,
@@ -49,9 +41,9 @@ impl State {
       return false;
     }
 
-    timers.remove((self.socket_id, TimerKind::Timeout), self.last_recv + std::time::Duration::from_millis(5_000));
+    s.timers.remove((self.socket_id, TimerKind::Timeout), self.last_recv + std::time::Duration::from_millis(5_000));
     self.last_recv = when;
-    timers.add((self.socket_id, TimerKind::Timeout), when + std::time::Duration::from_millis(5_000));
+    s.timers.add((self.socket_id, TimerKind::Timeout), when + std::time::Duration::from_millis(5_000));
 
     match &mut self.fsm {
       FSM::Handshaking { conn_opts } => {
@@ -69,7 +61,7 @@ impl State {
 
         match conn_opts.tx_to_service.send(ToService::Connection(Box::new(on_write), Arc::clone(&self.shared), (local_addr, peer_addr))) {
           Ok(_) => {
-            buf.push_back(&mut buf_local[..buf_size]).map(|_| buf.notify_one());
+            buf.push_back(&mut s.buf_local[..size]).map(|_| buf.notify_one());
             self.fsm = FSM::Connected;
             true
           },
@@ -83,7 +75,7 @@ impl State {
         }
       },
       FSM::Connected => {
-        buf.push_back(&mut buf_local[..buf_size]).map(|_| buf.notify_one());
+        buf.push_back(&mut s.buf_local[..size]).map(|_| buf.notify_one());
         true
       }
     }
