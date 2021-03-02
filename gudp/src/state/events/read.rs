@@ -4,10 +4,10 @@ use std::io;
 use std::time::Instant;
 
 use crate::types::FromDaemon as ToService;
-use crate::types::TimerId;
+use crate::types::{Expired, TimerId};
 use crate::error;
 use crate::state::{State, FSM};
-use crate::timer::{Expired, Timers};
+use crate::timer::{Timers, TimerKind};
 
 impl State {
   // Returns true when the connection is updated
@@ -19,7 +19,7 @@ impl State {
     buf_size: usize,
     when: Instant,
     timers: &mut T) -> bool
-  where T: Timers<'a, Expired<'a, TimerId>, TimerId> {
+  where T: Timers<'a, Item = (TimerId, TimerKind), Expired = Expired<'a, T>> {
     let (ref buf_read, ref _buf_write, ref status) = *self.shared;
 
     // TODO: Should we handle a poisoned lock state here? IE if a thread with a connection panics,
@@ -48,7 +48,10 @@ impl State {
       return false;
     }
 
+    timers.remove((self.timer_id, TimerKind::Timeout), self.last_recv + std::time::Duration::from_millis(5_000));
     self.last_recv = when;
+    timers.add((self.timer_id, TimerKind::Timeout), when + std::time::Duration::from_millis(5_000));
+
     match &mut self.fsm {
       FSM::Handshaking { conn_opts } => {
         let on_write = {

@@ -4,16 +4,16 @@ use std::io;
 use std::time::Instant;
 
 use crate::types::FromDaemon as ToService;
-use crate::types::TimerId;
+use crate::types::{Expired, TimerId};
 use crate::error;
 use crate::state::{State, FSM};
-use crate::timer::{Expired, Timers};
+use crate::timer::{Timers, TimerKind};
 
 impl State {
   // Returns true when the connection is updated
   // Returns false when the connection is closed
-  pub fn timer<'a, T>(&mut self, when: Instant, timers: &mut T) -> bool
-  where T: Timers<'a, Expired<'a, TimerId>, TimerId> {
+  pub fn timer<'a, T>(&mut self, kind: TimerKind, when: Instant, timers: &mut T) -> bool
+  where T: Timers<'a, Item = (TimerId, TimerKind), Expired = Expired<'a, T>> {
     let (ref buf_read, ref _buf_write, ref status) = *self.shared;
 
     // TODO: Should we handle a poisoned lock state here? IE if a thread with a connection panics,
@@ -42,14 +42,19 @@ impl State {
       return false;
     }
 
-    if when.duration_since(self.last_recv) > std::time::Duration::from_millis(5_000) {
-      status.set_io_hup();
-      buf.notify_all();
-      false
-    } else {
-      drop(buf);
-      timers.add(self.timer_id, std::time::Instant::now() + std::time::Duration::from_millis(1_000));
-      true
+    match kind {
+      TimerKind::Timeout => {
+        status.set_io_hup();
+        buf.notify_all();
+        false
+      },
+
+      // TODO: If last_sent is > heartbeat threshold, schedule a heartbeat write
+      TimerKind::Heartbeat => {
+        drop(buf);
+        timers.add((self.timer_id, kind), when + std::time::Duration::from_millis(1_000));
+        true
+      }
     }
   }
 }

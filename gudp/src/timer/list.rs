@@ -1,6 +1,7 @@
 use std::time::Instant;
 use super::Timers;
 
+#[derive(Debug)]
 pub struct TimerList<T: Ord + Copy> {
   timers: Vec<(Instant, T, bool)>
 }
@@ -20,6 +21,19 @@ impl<'a, T> Iterator for Expired<'a, T> {
         None => return None
       }
     }
+  }
+}
+
+impl<T: Ord + Copy + std::fmt::Debug> std::fmt::Display for TimerList<T> {
+  fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+    let now = std::time::Instant::now();
+    write!(f, "{} Timers: [", self.timers.len())?;
+    for (when, what, is_alive) in self.timers.iter() {
+      let display_dead = if !is_alive { "(dead)" } else { "" };
+      let until = when.checked_duration_since(now).unwrap_or(std::time::Duration::default());
+      write!(f, "{} {:?} {:?}; ", display_dead, until, what)?;
+    }
+    write!(f, "]")
   }
 }
 
@@ -54,8 +68,11 @@ impl<T: Ord + Copy> TimerList<T> {
   }
 }
 
-impl<'a, T> Timers<'a, Expired<'a, T>, T> for TimerList<T>
-where T: Ord + Copy {
+impl<'a, T> Timers<'a> for TimerList<T>
+where T: 'a + Ord + Copy {
+  type Item = T;
+  type Expired = Expired<'a, T>;
+
   fn add(&mut self, what: T, when: Instant) {
     self.find(what, when).map_err(|idx| {
       self.timers.insert(idx, (when, what, true))

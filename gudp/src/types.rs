@@ -5,6 +5,7 @@ use std::io;
 
 use crossbeam::channel::Sender;
 use crate::state::{self, Status};
+use crate::timer;
 
 #[allow(non_camel_case_types)]
 pub type READ_BUFFER_TAG = ();
@@ -18,6 +19,7 @@ pub type OnClose = dyn FnMut() -> io::Result<()> + Send;
 // The FSM uses values of this type transparently to register timer events
 // Corresponds to the local socket resource plus connected peer address
 pub type TimerId = (Token, SocketAddr);
+pub type Expired<'a, T> = timer::Expired<'a, <T as timer::Timers<'a>>::Item>;
 
 //TODO: Listener callback on close
 // pub type OnClose = dyn FnMut() + Send;

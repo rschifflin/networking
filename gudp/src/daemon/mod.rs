@@ -4,7 +4,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::io;
 use std::thread;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use mio::{Poll, Events, Token, Waker};
 use crossbeam::channel;
@@ -12,7 +12,10 @@ use crossbeam::channel;
 use crate::socket::Socket;
 use crate::constants::{WAKE_TOKEN, CONFIG_BUF_SIZE_BYTES};
 use crate::types::ToDaemon as FromService;
-use crate::timer::{self, Timers};
+use crate::timer::{self, Timers, TimerKind};
+
+const TIME_ZERO: Duration = Duration::from_millis(0);
+const TIME_IOTA: Duration = Duration::from_millis(10);
 
 mod poll;
 mod service_event;
@@ -35,7 +38,7 @@ pub fn spawn(mut poll: Poll, waker: Arc<Waker>, rx: channel::Receiver<FromServic
       let mut next_conn_id = 1;
       let mut token_map: HashMap<Token, Socket> = HashMap::new();
       let mut buf_local = vec![0u8; CONFIG_BUF_SIZE_BYTES];
-      let mut timers: timer::List<(Token, SocketAddr)> = timer::List::new();
+      let mut timers: timer::List<((Token, SocketAddr), TimerKind)> = timer::List::new();
 
       // A hacky alloc to iterate destructively on the keys of the pending_write hashset
       let mut pending_write_keybuf = Vec::with_capacity(128);
@@ -43,8 +46,13 @@ pub fn spawn(mut poll: Poll, waker: Arc<Waker>, rx: channel::Receiver<FromServic
       let mut expired_timers = Vec::with_capacity(128);
 
       loop {
-        let now = Instant::now();
-        let timeout = timers.when_next().and_then(|t| t.checked_duration_since(now));
+        let timeout = timers.when_next().map(|t| {
+          let now = Instant::now();
+          t.checked_duration_since(now)
+            .map(|timeout| Duration::max(timeout, TIME_IOTA))
+            .unwrap_or(TIME_ZERO)
+        });
+
         match poll.poll(&mut events, timeout) {
           Ok(()) => {
             // Clear out all msgs from service
@@ -95,10 +103,9 @@ pub fn spawn(mut poll: Poll, waker: Arc<Waker>, rx: channel::Receiver<FromServic
             // Handle timer expiry
             // NOTE: Occurs last to allow time to fill the read buffer, last chance to ack heartbeat, etc if necessary
             expired_timers.extend(timers.expire(Instant::now()));
-            for (token, peer_addr) in expired_timers.drain(..) {
+            for ((token, peer_addr), kind) in expired_timers.drain(..) {
               if let Entry::Occupied(token_entry) = token_map.entry(token) {
-                println!("Timer expired for {:?}", token);
-                timer_event::handle(token_entry, peer_addr, &mut poll, &mut timers);
+                timer_event::handle(token_entry, peer_addr, kind, &mut poll, &mut timers);
               }
             }
           },

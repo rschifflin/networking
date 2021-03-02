@@ -7,12 +7,14 @@ use mio::{Poll, Token};
 use crate::socket::{Socket, PeerType};
 use crate::state::State;
 use crate::daemon::poll;
-use crate::timer::{Expired, Timers};
+use crate::types::Expired;
+use crate::timer::{Timers, TimerKind};
 
 type TokenEntry<'a> = OccupiedEntry<'a, Token, Socket>;
-
 pub fn handle<'a, T>(mut token_entry: TokenEntry, buf_local: &mut [u8], poll: &Poll, timers: &'a mut T)
-  where T: Timers<'a, Expired<'a, (Token, SocketAddr)>, (Token, SocketAddr)> {
+  where T: Timers<'a,
+    Item = ((Token, SocketAddr), TimerKind),
+    Expired = Expired<'a, T>> {
 
   let token = *token_entry.key();
   let socket = token_entry.get_mut();

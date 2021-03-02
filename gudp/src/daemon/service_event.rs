@@ -10,10 +10,12 @@ use mio::{Poll, Token, Waker};
 use crate::socket::{Socket, PeerType, ConnOpts};
 use crate::types::FromDaemon as ToService;
 use crate::types::ToDaemon as FromService;
+use crate::types::Expired;
 use crate::state::State;
 use crate::daemon::poll;
-use crate::timer::{Expired, Timers};
+use crate::timer::{Timers, TimerKind};
 use crate::error;
+
 
 pub fn handle<'a, T>(msg: FromService,
   poll: &Poll,
@@ -23,7 +25,9 @@ pub fn handle<'a, T>(msg: FromService,
   tx_on_close: &channel::Sender<Token>,
   waker: &Arc<Waker>,
   next_conn_id: &mut usize)
-  where T: Timers<'a, Expired<'a, (Token, SocketAddr)>, (Token, SocketAddr)> {
+  where T: Timers<'a,
+    Item=((Token, SocketAddr), TimerKind),
+    Expired = Expired<'a, T>> {
 
   match msg {
     FromService::Connect(io, respond_tx, peer_addr) => {
@@ -47,7 +51,6 @@ pub fn handle<'a, T>(msg: FromService,
     FromService::Listen(io, respond_tx) => {
       match poll::register_io(poll, io, next_conn_id) {
         Some((token, mut conn, local_addr)) => {
-          // TODO: Build callback for listener with mpsc for listen_closed_events
           let on_close = {
             let tx_on_close = tx_on_close.clone();
             let waker = Arc::clone(waker);
