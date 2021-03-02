@@ -29,7 +29,6 @@ fn listen(listener: gudp::Listener, src_port: u16) {
 
   while n_remaining > 0 {
     let conn = listener.accept().expect("Could not accept connection on listener");
-    conn.send(b"hello").expect("Failed to greet new peer");
     threads.push(std::thread::spawn(move || { on_accept(conn) }));
     n_remaining -= 1;
   }
@@ -46,14 +45,15 @@ fn on_accept(conn: gudp::Connection) -> std::io::Result<()> {
   let dst_port = conn.peer_addr().port();
   println!("Accepted connection on {} for messages from {}", src_port, dst_port);
   let mut buf = [0u8; 1000];
+  let mut heartbeats = 0;
   loop {
     let recv_len = conn.recv(&mut buf)?;
     let recv_str = std::str::from_utf8(&buf[..recv_len]).expect("Did not recv utf8");
-    println!("[From {}]: {}", dst_port, recv_str);
-
     if recv_str == "ping" {
-      conn.send(b"pong").expect("Failed to send");
-      println!("> pong");
+      heartbeats += 1;
+    } else {
+      println!("[From {} ({})]: {}", dst_port, heartbeats, recv_str);
+      heartbeats = 0;
     }
   }
 }
@@ -67,8 +67,18 @@ fn ping(conn: gudp::Connection) {
   let stdin = std::io::stdin();
 
   loop {
-    if let Some(Ok(recv_len)) = conn.try_recv(&mut buf) {
-      println!("[From {}]: {}", dst_port, std::str::from_utf8(&buf[..recv_len]).expect("Did not recv utf8"));
+    // TODO: add a try_recv_iter?
+    loop {
+      match conn.try_recv(&mut buf) {
+        Some(Ok(recv_len)) => {
+          if &buf[..recv_len] != b"ping" {
+            println!("[From {}]: {}", dst_port, std::str::from_utf8(&buf[..recv_len]).expect("Did not recv utf8"));
+          }
+        },
+        _ => {
+          break;
+        }
+      }
     };
 
     send_string.clear();

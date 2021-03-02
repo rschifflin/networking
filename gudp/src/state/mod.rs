@@ -9,8 +9,7 @@ use bring::bounded::Bring;
 use cond_mutex::CondMutex;
 
 use crate::types::FromDaemon as ToService;
-use crate::types::TimerId;
-use crate::socket::ConnOpts;
+use crate::socket::{self, ConnOpts};
 
 pub use status::Status;
 pub use shared::Shared;
@@ -23,8 +22,9 @@ mod events;
 /// Tracks all the behavior of a given connection
 pub struct State {
   pub shared: Arc<Shared>,
-  pub timer_id: TimerId,
+  pub socket_id: socket::Id,
   pub last_recv: Instant,
+  pub last_send: Instant,
   pub fsm: FSM
 }
 

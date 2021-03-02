@@ -3,18 +3,26 @@ use std::sync::Arc;
 use std::io;
 use std::time::Instant;
 
+use crossbeam::channel;
+
 use crate::types::FromDaemon as ToService;
-use crate::types::{Expired, TimerId};
+use crate::types::Expired;
 use crate::error;
+use crate::socket;
 use crate::state::{State, FSM};
 use crate::timer::{Timers, TimerKind};
 
 impl State {
   // Returns true when the connection is updated
   // Returns false when the connection is closed
-  pub fn timer<'a, T>(&mut self, kind: TimerKind, when: Instant, timers: &mut T) -> bool
-  where T: Timers<'a, Item = (TimerId, TimerKind), Expired = Expired<'a, T>> {
-    let (ref buf_read, ref _buf_write, ref status) = *self.shared;
+  pub fn timer<'a, T>(&mut self,
+    buf_local: &mut [u8],
+    kind: TimerKind,
+    when: Instant,
+    timers: &mut T,
+    tx_on_write: &channel::Sender<socket::Id>) -> bool
+  where T: Timers<'a, Item = (socket::Id, TimerKind), Expired = Expired<'a, T>> {
+    let (ref buf_read, ref buf_write, ref status) = *self.shared;
 
     // TODO: Should we handle a poisoned lock state here? IE if a thread with a connection panics,
     // what should the daemon do about it? Just close the connection?
@@ -49,10 +57,19 @@ impl State {
         false
       },
 
-      // TODO: If last_sent is > heartbeat threshold, schedule a heartbeat write
+      //TODO: Proper error handling around failures to write
       TimerKind::Heartbeat => {
         drop(buf);
-        timers.add((self.timer_id, kind), when + std::time::Duration::from_millis(1_000));
+        let mut buf_write = buf_write.lock().expect("Could not acquire unpoisoned write lock");
+        buf_local[..4].copy_from_slice(b"ping");
+        let push_result = buf_write.push_back(&buf_local[..4]);
+        drop(buf_write);
+
+        match push_result {
+          Some(_size) => tx_on_write.send(self.socket_id).expect("Could not send simple heartbeat write"),
+          None => panic!("Provided buffer too small to contain a heartbeat!")
+        };
+
         true
       }
     }

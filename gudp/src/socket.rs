@@ -10,6 +10,8 @@ use mio::{Waker, Token};
 use crate::types::FromDaemon as ToService;
 use crate::state::State;
 
+pub type Id = (Token, SocketAddr);
+
 pub struct Socket {
   pub io: MioUdpSocket,
   pub local_addr: SocketAddr,
@@ -20,7 +22,7 @@ pub struct Socket {
 pub struct ConnOpts {
   pub token: Token,
   pub tx_to_service: channel::Sender<ToService>,
-  pub tx_on_write: channel::Sender<(Token, SocketAddr)>,
+  pub tx_on_write: channel::Sender<Id>,
   pub waker: Arc<Waker>
 }
 
@@ -28,7 +30,7 @@ impl ConnOpts {
   pub fn new(
     token: Token,
     tx_to_service: channel::Sender<ToService>,
-    tx_on_write: channel::Sender<(Token, SocketAddr)>,
+    tx_on_write: channel::Sender<Id>,
     waker: Arc<Waker>) -> ConnOpts {
       ConnOpts { token, tx_to_service, tx_on_write, waker }
   }

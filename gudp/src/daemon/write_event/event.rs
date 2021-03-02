@@ -1,21 +1,26 @@
 use std::collections::hash_map::OccupiedEntry;
 use std::net::SocketAddr;
+use std::time::Instant;
 
 use mio::{Poll, Token};
 
-use crate::socket::{Socket, PeerType};
+use crate::socket::{self, Socket, PeerType};
 use crate::daemon::poll;
+use crate::types::Expired;
+use crate::timer::{Timers, TimerKind};
 
 type TokenEntry<'a> = OccupiedEntry<'a, Token, Socket>;
-pub fn handle(mut token_entry: TokenEntry, pending_write_keybuf: &mut Vec<SocketAddr>, buf_local: &mut [u8], poll: &Poll) {
+pub fn handle<'a, T>(mut token_entry: TokenEntry, pending_write_keybuf: &mut Vec<SocketAddr>, buf_local: &mut [u8], poll: &Poll, timers: &'a mut T)
+where T: Timers<'a, Item = (socket::Id, TimerKind), Expired = Expired<'a, T>> {
   let socket = token_entry.get_mut();
+  let when = Instant::now();
   match &mut socket.peer_type {
     PeerType::Passive { ref mut peers, ref listen, ref mut pending_writes } => {
       pending_write_keybuf.extend(pending_writes.iter().copied());
       for peer_addr in pending_write_keybuf.iter() {
         match (peers.get_mut(peer_addr), listen) {
           (Some(peer_state), _) => {
-            match peer_state.write(&mut socket.io, *peer_addr, buf_local) {
+            match peer_state.write(&mut socket.io, *peer_addr, buf_local, when, timers) {
               // Success and still no blocking
               Ok(true) => { pending_writes.remove(peer_addr); },
 
@@ -50,7 +55,7 @@ pub fn handle(mut token_entry: TokenEntry, pending_write_keybuf: &mut Vec<Socket
     },
 
     PeerType::Direct(addr, state) => {
-      match state.write(&mut socket.io, *addr, buf_local) {
+      match state.write(&mut socket.io, *addr, buf_local, when, timers) {
         // If we receive wouldblock that's ok, since this peer is 1:1 with the underlying io
         // and will be chosen to write when the io becomes writable
         Ok(_) => (),

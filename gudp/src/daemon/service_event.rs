@@ -7,7 +7,7 @@ use std::io;
 use crossbeam::channel;
 use mio::{Poll, Token, Waker};
 
-use crate::socket::{Socket, PeerType, ConnOpts};
+use crate::socket::{self, Socket, PeerType, ConnOpts};
 use crate::types::FromDaemon as ToService;
 use crate::types::ToDaemon as FromService;
 use crate::types::Expired;
@@ -21,12 +21,12 @@ pub fn handle<'a, T>(msg: FromService,
   poll: &Poll,
   timers: &'a mut T,
   token_map: &mut HashMap<Token, Socket>,
-  tx_on_write: &channel::Sender<(Token, SocketAddr)>,
+  tx_on_write: &channel::Sender<socket::Id>,
   tx_on_close: &channel::Sender<Token>,
   waker: &Arc<Waker>,
   next_conn_id: &mut usize)
   where T: Timers<'a,
-    Item=((Token, SocketAddr), TimerKind),
+    Item=(socket::Id, TimerKind),
     Expired = Expired<'a, T>> {
 
   match msg {
@@ -35,14 +35,10 @@ pub fn handle<'a, T>(msg: FromService,
         Some((token, mut conn, local_addr)) => {
           let conn_opts = ConnOpts::new(token, respond_tx, tx_on_write.clone(), Arc::clone(waker));
           let now = Instant::now();
-          let timer_id = (token, peer_addr);
-          let state = State::init(now, timer_id, timers, conn_opts);
-          conn.send_to(b"hello", peer_addr).ok()
-            .or_else(|| { poll::deregister_io(poll, &mut conn); None })
-            .map(|_| {
-              let socket = Socket::new(conn, local_addr, PeerType::Direct(peer_addr, state));
-              token_map.insert(token, socket);
-            });
+          let socket_id = (token, peer_addr);
+          let state = State::init(now, socket_id, timers, conn_opts);
+          let socket = Socket::new(conn, local_addr, PeerType::Direct(peer_addr, state));
+          token_map.insert(token, socket);
         }
         None => drop(respond_tx)
       }

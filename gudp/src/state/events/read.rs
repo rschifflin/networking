@@ -4,8 +4,9 @@ use std::io;
 use std::time::Instant;
 
 use crate::types::FromDaemon as ToService;
-use crate::types::{Expired, TimerId};
+use crate::types::Expired;
 use crate::error;
+use crate::socket;
 use crate::state::{State, FSM};
 use crate::timer::{Timers, TimerKind};
 
@@ -19,7 +20,7 @@ impl State {
     buf_size: usize,
     when: Instant,
     timers: &mut T) -> bool
-  where T: Timers<'a, Item = (TimerId, TimerKind), Expired = Expired<'a, T>> {
+  where T: Timers<'a, Item = (socket::Id, TimerKind), Expired = Expired<'a, T>> {
     let (ref buf_read, ref _buf_write, ref status) = *self.shared;
 
     // TODO: Should we handle a poisoned lock state here? IE if a thread with a connection panics,
@@ -48,9 +49,9 @@ impl State {
       return false;
     }
 
-    timers.remove((self.timer_id, TimerKind::Timeout), self.last_recv + std::time::Duration::from_millis(5_000));
+    timers.remove((self.socket_id, TimerKind::Timeout), self.last_recv + std::time::Duration::from_millis(5_000));
     self.last_recv = when;
-    timers.add((self.timer_id, TimerKind::Timeout), when + std::time::Duration::from_millis(5_000));
+    timers.add((self.socket_id, TimerKind::Timeout), when + std::time::Duration::from_millis(5_000));
 
     match &mut self.fsm {
       FSM::Handshaking { conn_opts } => {

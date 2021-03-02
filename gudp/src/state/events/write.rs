@@ -1,17 +1,28 @@
 use std::net::SocketAddr;
 use std::io;
+use std::time::Instant;
 
 use mio::net::UdpSocket as MioUdpSocket;
 use bring::WithOpt;
 
+use crate::socket;
 use crate::state::State;
+use crate::types::Expired;
+use crate::timer::{Timers, TimerKind};
 
+// TODO: Give state a SystemClock instead of passing in whens...
 impl State {
   // Returns...
   //    Ok(True) when the state update + write succeeds
   //    Ok(False) when the state update succeeds but write must block
   //    Err(e) when an io error (other than WouldBlock) occurs on write
-  pub fn write(&mut self, io: &mut MioUdpSocket, peer_addr: SocketAddr, buf_local: &mut [u8]) -> io::Result<bool> {
+  pub fn write<'a, T>(&mut self,
+    io: &mut MioUdpSocket,
+    peer_addr: SocketAddr,
+    buf_local: &mut [u8],
+    when: Instant,
+    timers: &mut T) -> io::Result<bool>
+  where T: Timers<'a, Item = (socket::Id, TimerKind), Expired = Expired<'a, T>> {
     let (ref buf_read, ref buf_write, ref status) = *self.shared;
     // TODO: Handle appropriate flushing behavior on closed ends:
     //    - if peer is closed, discard writes and remove right away (app can still drain read buffer, app writes will fail)
@@ -37,7 +48,12 @@ impl State {
       // TODO: If our buf is too small, should we truncate? return Err:WriteZero?
       // Otherwise maybe change buflocal to a vec and only grow it if we get massive packets
       None => Ok(true), // Nothing was on the ring or our buf was too small. Simply no-op the write
-      Some(Ok(_)) => Ok(true), // There was data on the buffer and we were able to pop it and send it!
+      Some(Ok(_)) => {
+        timers.remove((self.socket_id, TimerKind::Heartbeat), self.last_send + std::time::Duration::from_millis(1_000));
+        self.last_send = when;
+        timers.add((self.socket_id, TimerKind::Heartbeat), when + std::time::Duration::from_millis(1_000));
+        Ok(true)
+      }, // There was data on the buffer and we were able to pop it and send it!
       Some(Err(e)) => {
         if e.kind() == std::io::ErrorKind::WouldBlock { Ok(false) } // There was data on the buffer but we would've blocked if we tried to send it, so we left it alone
         else {

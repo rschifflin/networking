@@ -1,6 +1,5 @@
 use std::sync::Arc;
 use std::net::{UdpSocket, SocketAddr};
-use mio::Token;
 use std::io;
 
 use crossbeam::channel::Sender;
@@ -18,7 +17,6 @@ pub type OnClose = dyn FnMut() -> io::Result<()> + Send;
 
 // The FSM uses values of this type transparently to register timer events
 // Corresponds to the local socket resource plus connected peer address
-pub type TimerId = (Token, SocketAddr);
 pub type Expired<'a, T> = timer::Expired<'a, <T as timer::Timers<'a>>::Item>;
 
 //TODO: Listener callback on close

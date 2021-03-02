@@ -4,7 +4,7 @@ use std::net::SocketAddr;
 use std::time::Instant;
 use mio::{Poll, Token};
 
-use crate::socket::{Socket, PeerType};
+use crate::socket::{self, Socket, PeerType};
 use crate::state::State;
 use crate::daemon::poll;
 use crate::types::Expired;
@@ -13,7 +13,7 @@ use crate::timer::{Timers, TimerKind};
 type TokenEntry<'a> = OccupiedEntry<'a, Token, Socket>;
 pub fn handle<'a, T>(mut token_entry: TokenEntry, buf_local: &mut [u8], poll: &Poll, timers: &'a mut T)
   where T: Timers<'a,
-    Item = ((Token, SocketAddr), TimerKind),
+    Item = (socket::Id, TimerKind),
     Expired = Expired<'a, T>> {
 
   let token = *token_entry.key();
@@ -72,8 +72,8 @@ pub fn handle<'a, T>(mut token_entry: TokenEntry, buf_local: &mut [u8], poll: &P
 
             /* create+handle new peer */
             (None, Some(conn_opts)) => {
-              let timer_id = (token, peer_addr);
-              let mut peer_state = State::init(when, timer_id, timers, conn_opts.clone());
+              let socket_id = (token, peer_addr);
+              let mut peer_state = State::init(when, socket_id, timers, conn_opts.clone());
 
               // If state update fails, we simply don't insert the new peer
               if peer_state.read(socket.local_addr, peer_addr, buf_local, size, when, timers) {
