@@ -3,6 +3,7 @@
 members = [
   "gudp-client",
   "gudp-chaingun",
+  "gudp-echo",
   "gudp",
   "slice-pair",
   "bring",

@@ -63,7 +63,7 @@ impl State {
           }
         };
 
-        match conn_opts.tx_to_service.send(ToService::Connection(Box::new(on_write), Arc::clone(&self.shared), (local_addr, peer_addr))) {
+        match conn_opts.tx_to_service.send(ToService::Connection(Arc::new(on_write), Arc::clone(&self.shared), (local_addr, peer_addr))) {
           Ok(_) => {
             // TODO: Warn if fails from src buffer too small or dst buffer full?
             buf.push_back(&mut s.buf_local[..size]).map(|_| buf.notify_one());

@@ -13,8 +13,9 @@ use crate::error;
 use std::io;
 
 // A user-facing GUDP Connection interface
+#[derive(Clone)]
 pub struct Connection {
-  on_write: Box<OnWrite>,
+  on_write: Arc<OnWrite>,
   shared: Arc<state::Shared>,
   id: (SocketAddr, SocketAddr) // Local addr, Peer Addr
 }
@@ -27,7 +28,7 @@ impl Drop for Connection {
 }
 
 impl Connection {
-    pub fn new(on_write: Box<OnWrite>, shared: Arc<state::Shared>, id: (SocketAddr, SocketAddr)) -> Connection {
+    pub fn new(on_write: Arc<OnWrite>, shared: Arc<state::Shared>, id: (SocketAddr, SocketAddr)) -> Connection {
       Connection { on_write, shared, id }
     }
 

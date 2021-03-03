@@ -1,6 +1,7 @@
 use std::collections::hash_map::OccupiedEntry;
 use std::net::SocketAddr;
 
+use log::trace;
 use mio::Token;
 
 use crate::socket::{Socket, PeerType};
@@ -22,8 +23,11 @@ pub fn handle(mut token_entry: TokenEntry, peer_addr: SocketAddr, kind: TimerKin
     PeerType::Passive { ref mut peers, ref listen, .. } => {
       if let Some(state) = peers.get_mut(&peer_addr) {
         if !state.timer(kind, s) {
+          trace!("OnTimeout: Peer is finished, dropping {}", peer_addr);
+
           peers.remove(&peer_addr);
           if peers.len() == 0 && listen.is_none() {
+            trace!("OnTimeout: All peers are finished, dropping IO");
             poll::deregister_io(&mut socket.io, s);
             token_entry.remove();
           }

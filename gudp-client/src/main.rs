@@ -1,4 +1,7 @@
+//ex listener: RUST_BACKTRACE=1 RUST_LOG=TRACE cargo run -- -l 8000 9000 2> err.txt
+//ex client: RUST_BACKTRACE=1 RUST_LOG=TRACE cargo run -- 9000 8000 2> err.txt
 fn main() {
+  env_logger::init();
   let usage = "Usage: gudp-client [-l] <src port> <dst port>";
   let mut args = std::env::args().skip(1).rev();
   let dst_port_string = args.next().expect(usage);
@@ -71,34 +74,34 @@ fn on_accept(conn: gudp::Connection) -> std::io::Result<()> {
 }
 
 fn ping(conn: gudp::Connection) {
+  let reader = conn.clone();
   let src_port = conn.local_addr().port();
   let dst_port = conn.peer_addr().port();
   println!("Sending stdin from {} to {}", src_port, dst_port);
   let mut buf = [0u8; 1000];
   let mut send_string = String::new();
   let stdin = std::io::stdin();
-
-  loop {
-    // TODO: add a try_recv_iter?
-    loop {
-      match conn.try_recv(&mut buf) {
-        Some(Ok(recv_len)) => {
-          if &buf[..recv_len] != b"ping" {
-            println!("[From {}]: {}", dst_port, std::str::from_utf8(&buf[..recv_len]).expect("Did not recv utf8"));
-          }
-        },
-        _ => {
-          break;
+  let tzero = std::time::Instant::now();
+  std::thread::spawn(move || loop {
+    match reader.recv(&mut buf) {
+      Ok(recv_len) => {
+        let now = std::time::Instant::now();
+        if &buf[..recv_len] != b"ping" {
+          println!("[From {} <{:?}>]: {}", dst_port, now.duration_since(tzero), std::str::from_utf8(&buf[..recv_len]).expect("Did not recv utf8"));
         }
+      },
+      _ => {
+        break;
       }
     };
+  });
 
+  loop {
     send_string.clear();
     stdin.read_line(&mut send_string).expect("Could not read stdin");
     send_string.pop(); // To remove the newline
     conn.send(send_string.as_bytes()).expect("Failed to send");
-
-    // Brief sleep for an optional response to arrive
-    std::thread::sleep(std::time::Duration::from_millis(50));
+    let now = std::time::Instant::now();
+    println!("[To {} <{:?}>]: {}", dst_port, now.duration_since(tzero), send_string);
   }
 }

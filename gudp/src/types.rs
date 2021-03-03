@@ -9,10 +9,10 @@ use crate::state;
 pub type READ_BUFFER_TAG = ();
 
 // Connection callback on write
-pub type OnWrite = dyn Fn(usize) -> io::Result<usize> + Send;
+pub type OnWrite = dyn Fn(usize) -> io::Result<usize> + Send + Sync;
 
 // Listener callback on close
-pub type OnClose = dyn FnMut() -> io::Result<()> + Send;
+pub type OnClose = dyn Fn() -> io::Result<()> + Send + Sync;
 
 #[derive(Debug)]
 pub enum ToDaemon {
@@ -22,5 +22,5 @@ pub enum ToDaemon {
 
 pub enum FromDaemon {
   Listener(Box<OnClose>),
-  Connection(Box<OnWrite>, Arc<state::Shared>, (SocketAddr, SocketAddr))
+  Connection(Arc<OnWrite>, Arc<state::Shared>, (SocketAddr, SocketAddr))
 }

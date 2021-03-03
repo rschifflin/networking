@@ -1,4 +1,6 @@
 use std::collections::hash_map::OccupiedEntry;
+
+use log::trace;
 use mio::Token;
 
 use crate::socket::{Socket, PeerType};
@@ -28,6 +30,7 @@ pub fn handle(mut token_entry: TokenEntry, s: &mut LoopLocalState) {
           },
         };
 
+        trace!("OnReadable: IO encountered error, dropping all peers.");
         poll::deregister_io(&mut socket.io, s);
         token_entry.remove();
       }
@@ -45,9 +48,11 @@ pub fn handle(mut token_entry: TokenEntry, s: &mut LoopLocalState) {
               // Returns FALSE if the socket can be cleaned up (read from app end is closed and write to peer buffer is empty)
               // Returns TRUE otherwise
               if !state.read(socket.local_addr, peer_addr, size, s) {
+                trace!("OnReadable: Peer is finished, dropping {}", peer_addr);
                 peers.remove(&peer_addr);
                 // If no peers left and not actively listening, close and free the resource
                 if peers.len() == 0 && listen.is_none() {
+                  trace!("OnReadbale: All peers are finished, dropping IO");
                   poll::deregister_io(&mut socket.io, s);
                   token_entry.remove();
                 }

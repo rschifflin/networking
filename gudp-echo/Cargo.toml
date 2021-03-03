@@ -1,5 +1,5 @@
 [package]
-name = "gudp-client"
+name = "gudp-echo"
 version = "0.1.0"
 authors = ["Mark Schifflin <randy.schifflin@gmail.com>"]
 edition = "2018"

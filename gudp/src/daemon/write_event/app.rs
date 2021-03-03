@@ -1,6 +1,7 @@
 use std::collections::hash_map::OccupiedEntry;
 use std::net::SocketAddr;
 
+use log::trace;
 use mio::Token;
 
 use crate::socket::{Socket, PeerType};
@@ -24,8 +25,11 @@ pub fn handle(mut token_entry: TokenEntry, peer_addr: SocketAddr, s: &mut LoopLo
             Ok(true) => { pending_writes.remove(&peer_addr); },
             // Peer hung up and no reads left, can clean up the resource
             Ok(false) => {
+              trace!("App Write: Peer is finished, dropping {}", peer_addr);
               peers.remove(&peer_addr);
+
               if peers.len() == 0 && listen.is_none() {
+                trace!("App Write: All peers are finished, dropping IO");
                 poll::deregister_io(&mut socket.io, s);
                 token_entry.remove();
               }
@@ -33,13 +37,14 @@ pub fn handle(mut token_entry: TokenEntry, peer_addr: SocketAddr, s: &mut LoopLo
             Err(e) => {
               // WouldBlock is fine for mio, we just try again later
               if e.kind() == std::io::ErrorKind::WouldBlock {
-                // pending write marked if absent
+                // mark pending write if absent
                 pending_writes.insert(peer_addr);
               } else {
                 let errno = e.raw_os_error();
                 for (_addr, peer_state) in peers.iter() {
                   peer_state.on_io_error(errno, s);
                 }
+                  trace!("App Write: IO encountered error, dropping all peers. Caused by {}", peer_addr);
                 poll::deregister_io(&mut socket.io, s);
                 token_entry.remove();
               }

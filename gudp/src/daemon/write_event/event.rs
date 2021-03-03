@@ -1,6 +1,7 @@
 use std::collections::hash_map::OccupiedEntry;
 use std::net::SocketAddr;
 
+use log::trace;
 use mio::Token;
 
 use crate::socket::{Socket, PeerType};
@@ -21,8 +22,11 @@ pub fn handle(mut token_entry: TokenEntry, pending_write_keybuf: &mut Vec<Socket
               Ok(true) => { pending_writes.remove(peer_addr); },
               // Peer hung up and no reads left, can clean up the resource
               Ok(false) => {
+                trace!("OnWriteable: Peer is finished, dropping {}", peer_addr);
                 peers.remove(&peer_addr);
+
                 if peers.len() == 0 && listen.is_none() {
+                  trace!("OnWriteable: All peers are finished, dropping IO");
                   poll::deregister_io(&mut socket.io, s);
                   token_entry.remove();
                   break; // Stop iterating peers, they're all gone
@@ -39,6 +43,7 @@ pub fn handle(mut token_entry: TokenEntry, pending_write_keybuf: &mut Vec<Socket
                     peer_state.on_io_error(errno, s);
                   }
 
+                  trace!("OnWriteable: IO encountered error, dropping all peers. Caused by {}", peer_addr);
                   poll::deregister_io(&mut socket.io, s);
                   token_entry.remove();
                   break; // Stop iterating peers, they're all dead
