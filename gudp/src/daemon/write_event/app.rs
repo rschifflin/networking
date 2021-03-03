@@ -15,45 +15,54 @@ type TokenEntry<'a> = OccupiedEntry<'a, Token, Socket>;
 pub fn handle(mut token_entry: TokenEntry, peer_addr: SocketAddr, s: &mut LoopLocalState) {
   let socket = token_entry.get_mut();
   match &mut socket.peer_type {
-    PeerType::Passive { peers, listen, pending_writes } => {
+    PeerType::Passive { peers, ref listen, pending_writes } => {
       match (peers.get_mut(&peer_addr), listen) {
+        (None, _) => { /* discard socket noise */ },
         (Some(peer_state), _) => {
           match peer_state.write(&mut socket.io, peer_addr, s) {
+            // Success, pending write fulfilled if present
             Ok(true) => { pending_writes.remove(&peer_addr); },
-            Ok(false) => { pending_writes.insert(peer_addr); },
-            Err(e) => { // Deregister io
-              let errno = e.raw_os_error();
-
-              // peer_state.write already signals this conn's io error
-              // remove it to get the list of just all sibling connections that must die
+            // Peer hung up and no reads left, can clean up the resource
+            Ok(false) => {
               peers.remove(&peer_addr);
-
-              for (_addr, peer_state) in peers.iter() {
-                let (ref buf_read, ref _buf_write, ref status) = *peer_state.shared;
-                let buf = buf_read.lock().expect("Could not acquire unpoisoned read lock");
-                status.set_io_err(errno);
-                buf.notify_all();
-                drop(buf);
+              if peers.len() == 0 && listen.is_none() {
+                poll::deregister_io(&mut socket.io, s);
+                token_entry.remove();
               }
-
-              poll::deregister_io(&mut socket.io, s);
-              token_entry.remove();
-              return;
+            },
+            Err(e) => {
+              // WouldBlock is fine for mio, we just try again later
+              if e.kind() == std::io::ErrorKind::WouldBlock {
+                // pending write marked if absent
+                pending_writes.insert(peer_addr);
+              } else {
+                let errno = e.raw_os_error();
+                for (_addr, peer_state) in peers.iter() {
+                  peer_state.on_io_error(errno, s);
+                }
+                poll::deregister_io(&mut socket.io, s);
+                token_entry.remove();
+              }
             }
           }
         },
-        (None, _) => { /* discard socket noise */ },
       }
     },
+
     PeerType::Direct(addr, state) => {
       match state.write(&mut socket.io, *addr, s) {
-        // If we receive wouldblock that's ok, since this peer is 1:1 with the underlying io
-        // and will be chosen to write when the io becomes writable
-        Ok(_) => (),
-        Err(_) => {
-          // Deregister io
+        Ok(true) => { /* Success */ },
+        Ok(false) => { // Resource ready to be cleaned up
           poll::deregister_io(&mut socket.io, s);
           token_entry.remove();
+        },
+        Err(e) => {
+          if e.kind() != std::io::ErrorKind::WouldBlock {
+            let errno = e.raw_os_error();
+            state.on_io_error(errno, s);
+            poll::deregister_io(&mut socket.io, s);
+            token_entry.remove();
+          }
         }
       }
     }

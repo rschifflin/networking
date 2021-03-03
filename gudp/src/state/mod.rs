@@ -9,6 +9,7 @@ pub use shared::Shared;
 mod shared;
 mod status;
 mod events;
+mod util;
 
 /// Connection state
 /// Tracks all the behavior of a given connection

@@ -47,6 +47,13 @@ impl<T: Alloc> Bring<T> {
     self.count
   }
 
+  pub fn clear(&mut self) {
+    self.count = 0;
+    self.remaining = self.buffer.len();
+    self.head_idx = 0;
+    self.next_idx = 0;
+  }
+
   pub(crate) fn does_wrap(&self) -> bool {
     if self.count == 0 { return false }
     self.head_idx >= self.next_idx

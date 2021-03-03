@@ -22,7 +22,7 @@ pub struct Connection {
 impl Drop for Connection {
   fn drop(&mut self) {
     let (_, _, ref status) = *self.shared;
-    status.set_client_hup();
+    status.set_app_hup();
   }
 }
 

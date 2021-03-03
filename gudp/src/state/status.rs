@@ -23,7 +23,7 @@ const FLAG_APP_HUP: u32 = 1u32.rotate_right(1);
 // This is decided as a consequence of the protocol state
 // determining that the virtual connection has timed out.
 // IO can still be flushed to the client before the connection ends.
-const FLAG_IO_HUP: u32 = 1u32.rotate_right(2);
+const FLAG_PEER_HUP: u32 = 1u32.rotate_right(2);
 
 // The socket encountered an unknown error.
 // The raw error code will be available.
@@ -33,13 +33,13 @@ const FLAG_IO_ERR: u32 = 1u32.rotate_right(3);
 // The socket is in the closed state for any reason
 const FLAGS_CLOSED: u32 =
   FLAG_APP_HUP |
-  FLAG_IO_HUP |
+  FLAG_PEER_HUP |
   FLAG_IO_ERR;
 
 // The socket was gracefully closed by either side
 const FLAGS_HUP: u32 =
   FLAG_APP_HUP |
-  FLAG_IO_HUP;
+  FLAG_PEER_HUP;
 
 const ERRNO_CLEAR: i32 = 0;
 
@@ -61,15 +61,15 @@ impl Status {
   }
 
   // Indicate the app has gracefully closed their connection end
-  pub fn set_client_hup(&self) {
+  pub fn set_app_hup(&self) {
     // Set the app hangup flag and preserve the rest
     self.status.fetch_or(FLAG_APP_HUP, OSeqCst);
   }
 
   // Indicate the socket has gracefully closed their connection end
-  pub fn set_io_hup(&self) {
+  pub fn set_peer_hup(&self) {
     // Set the io hangup flag and preserve the rest
-    self.status.fetch_or(FLAG_IO_HUP, OSeqCst);
+    self.status.fetch_or(FLAG_PEER_HUP, OSeqCst);
   }
 
   // Indicate the socket encountered a fatal error.
@@ -95,6 +95,14 @@ impl Status {
 
   pub fn is_open(&self) -> bool {
     !self.is_closed()
+  }
+
+  pub fn app_has_hup(&self) -> bool {
+    (self.status.load(OSeqCst) & FLAG_APP_HUP) != 0
+  }
+
+  pub fn peer_has_hup(&self) -> bool {
+    (self.status.load(OSeqCst) & FLAG_PEER_HUP) != 0
   }
 
   // TODO: The ClientStatus enum will one day expose semantic status info

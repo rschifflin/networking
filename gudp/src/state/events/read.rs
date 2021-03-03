@@ -11,9 +11,14 @@ use crate::constants::time_ms;
 
 impl State {
   // Returns true when the connection is updated
-  // Returns false when the connection is closed
+  // Returns false when the connection is terminal and can be cleaned up
   pub fn read(&mut self, local_addr: SocketAddr, peer_addr: SocketAddr, size: usize, s: &mut LoopLocalState) -> bool {
-    let (ref buf_read, ref _buf_write, ref status) = *self.shared;
+    s.timers.remove((self.socket_id, TimerKind::Timeout), self.last_recv + time_ms::TIMEOUT);
+    let when = s.clock.now();
+    self.last_recv = when;
+    s.timers.add((self.socket_id, TimerKind::Timeout), when + time_ms::TIMEOUT);
+
+    let (ref buf_read, ref buf_write, ref status) = *self.shared;
 
     // TODO: Should we handle a poisoned lock state here? IE if a thread with a connection panics,
     // what should the daemon do about it? Just close the connection?
@@ -32,20 +37,18 @@ impl State {
     // That means when the client DOES acquire the readlock, it will observe a closed status and not sleep.
     // Alternatively, if the client acquired the readlock first, it will sleep on the condvar before this fn can notify.
     // Thus ensuring it will hear the notification to wake up and observe the closed status.
-    if status.is_closed() {
-      // TODO: Handle appropriate flushing behavior on closed ends:
-      //    - if peer is closed, remove right away (app can still drain read buffer, app writes will fail)
-      //    - if app is closed, discard reads but do not remove until writes are flushed
-      //    - if io is closed, remove right away and remove all siblings
+    if status.app_has_hup() {
       buf.notify_all();
-      return false;
+      let buf_write = buf_write.lock().expect("Could not acquire unpoisoned write lock");
+      if buf_write.count() > 0 {
+        return true
+      } else {
+        self.clear_timers(s);
+        return false
+      }
     }
 
-    s.timers.remove((self.socket_id, TimerKind::Timeout), self.last_recv + time_ms::T_5000);
-    let when = s.clock.now();
-    self.last_recv = when;
-    s.timers.add((self.socket_id, TimerKind::Timeout), when + time_ms::T_5000);
-
+    // App has not hung up
     match &mut self.fsm {
       FSM::Handshaking { conn_opts } => {
         let on_write = {
@@ -62,20 +65,20 @@ impl State {
 
         match conn_opts.tx_to_service.send(ToService::Connection(Box::new(on_write), Arc::clone(&self.shared), (local_addr, peer_addr))) {
           Ok(_) => {
+            // TODO: Warn if fails from src buffer too small or dst buffer full?
             buf.push_back(&mut s.buf_local[..size]).map(|_| buf.notify_one());
             self.fsm = FSM::Connected;
             true
           },
           Err(_) => {
-            // Failed to create the connection. Deregister
-            // NOTE: Setting status is technically not necessary, there is no clientside to observe this
-            status.set_client_hup();
-            buf.notify_all();
+            // NOTE: Setting status and notifying is not necessary- if the send failed there is no app-side connection to observe this or block on it
+            self.clear_timers(s);
             false
           }
         }
       },
       FSM::Connected => {
+        // TODO: Warn if fails from src buffer too small or dst buffer full?
         buf.push_back(&mut s.buf_local[..size]).map(|_| buf.notify_one());
         true
       }

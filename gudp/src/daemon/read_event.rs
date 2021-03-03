@@ -13,32 +13,21 @@ pub fn handle(mut token_entry: TokenEntry, s: &mut LoopLocalState) {
   // TODO: Read in loop until we hit WOULDBLOCK
   match socket.io.recv_from(&mut s.buf_local) {
     Err(e) => {
-      if e.kind() == std::io::ErrorKind::WouldBlock {} // This is fine for mio, try again later
-      else {
-        // TODO: Handle errors explicitly. Set remote drop flags based on errorkind
-        // Add error flags we can set when we have a semantic error that has no underlying errno code.
+      // WouldBlock is fine for mio, we just try again later
+      if e.kind() != std::io::ErrorKind::WouldBlock {
+        // SOMEDAY: Convey more error info to app side. Maybe set remote drop flags based on errorkind?
         let errno = e.raw_os_error();
 
-        // Iterate thru all peers, removing them
+        // Iterate thru all peers, signalling io error then removing them
         match socket.peer_type {
-          PeerType::Direct(_, ref mut state) => {
-            let (ref buf_read, ref _buf_write, ref status) = *state.shared;
-            let buf = buf_read.lock().expect("Could not acquire unpoisoned read lock");
-            status.set_io_err(errno);
-            buf.notify_all();
-            drop(buf);
-          },
-
+          PeerType::Direct(_, ref mut state) => state.on_io_error(errno, s),
           PeerType::Passive { ref mut peers, .. } => {
             for (_addr, peer_state) in peers.iter() {
-              let (ref buf_read, ref _buf_write, ref status) = *peer_state.shared;
-              let buf = buf_read.lock().expect("Could not acquire unpoisoned read lock");
-              status.set_io_err(errno);
-              buf.notify_all();
-              drop(buf);
+              peer_state.on_io_error(errno, s);
             }
           },
         };
+
         poll::deregister_io(&mut socket.io, s);
         token_entry.remove();
       }
@@ -48,11 +37,16 @@ pub fn handle(mut token_entry: TokenEntry, s: &mut LoopLocalState) {
       match socket.peer_type {
         PeerType::Passive { ref mut peers, ref listen, .. } => {
           match (peers.get_mut(&peer_addr), listen) {
-            /* Handle existing peer */
+            /* Socket noise */
+            (None, None) => { },
+
+            /* Existing peer */
             (Some(state), _) => {
+              // Returns FALSE if the socket can be cleaned up (read from app end is closed and write to peer buffer is empty)
+              // Returns TRUE otherwise
               if !state.read(socket.local_addr, peer_addr, size, s) {
-                peers.remove(&peer_addr); // Remove closed connection
-                // No peers left and not actively listening. Close and free the resource
+                peers.remove(&peer_addr);
+                // If no peers left and not actively listening, close and free the resource
                 if peers.len() == 0 && listen.is_none() {
                   poll::deregister_io(&mut socket.io, s);
                   token_entry.remove();
@@ -70,8 +64,6 @@ pub fn handle(mut token_entry: TokenEntry, s: &mut LoopLocalState) {
                 peers.insert(peer_addr, peer_state);
               };
             },
-
-            (None, None) => return, // Discard unrecognized peer msgs when not listening
           }
         }
 

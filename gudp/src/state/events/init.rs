@@ -3,12 +3,16 @@ use crate::state::{State, FSM, shared};
 use crate::timer::{Timers, TimerKind, Clock};
 use crate::daemon::LoopLocalState;
 use crate::constants::time_ms;
+use crate::warn;
 
 impl State {
   pub fn init(socket_id: socket::Id, conn_opts: ConnOpts, s: &mut LoopLocalState) -> State {
     let when = s.clock.now();
-    s.timers.add((socket_id, TimerKind::Timeout), when + time_ms::T_5000);
-    s.timers.add((socket_id, TimerKind::Heartbeat), when + time_ms::ZERO);
+    s.timers.add((socket_id, TimerKind::Timeout), when + time_ms::TIMEOUT);
+    s.timers.add((socket_id, TimerKind::Heartbeat), when + time_ms::HEARTBEAT);
+
+    // Notify that we have pending initial writes to send
+    s.tx_on_write.send(socket_id).unwrap_or_else(warn::tx_to_write_send_failed);
 
     State {
       shared: shared::new(),

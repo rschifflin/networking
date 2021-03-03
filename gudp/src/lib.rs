@@ -2,6 +2,7 @@ mod connection;
 mod constants;
 mod daemon;
 mod error;
+mod warn;
 mod service;
 mod socket;
 mod state;
