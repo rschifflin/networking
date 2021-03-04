@@ -14,20 +14,19 @@ use std::io;
 
 use crate::error;
 
-// TODO: Rename xxx_client_yyy to xxx_app_yyy
-// The client gracefully dropped their end of the connection
+// The app gracefully dropped their end of the connection
 // IO can still be flushed to the socket before the connection ends.
 const FLAG_APP_HUP: u32 = 1u32.rotate_right(1);
 
 // The socket gracefully dropped their end of the connection
 // This is decided as a consequence of the protocol state
 // determining that the virtual connection has timed out.
-// IO can still be flushed to the client before the connection ends.
+// IO can still be flushed to the app before the connection ends.
 const FLAG_PEER_HUP: u32 = 1u32.rotate_right(2);
 
 // The socket encountered an unknown error.
 // The raw error code will be available.
-// IO can still be flushed to the client before the connection ends.
+// IO can still be flushed to the app before the connection ends.
 const FLAG_IO_ERR: u32 = 1u32.rotate_right(3);
 
 // The socket is in the closed state for any reason
@@ -42,9 +41,6 @@ const FLAGS_HUP: u32 =
   FLAG_PEER_HUP;
 
 const ERRNO_CLEAR: i32 = 0;
-
-#[derive(Debug)]
-pub enum ClientStatus { Active }
 
 #[derive(Debug)]
 pub struct Status {
@@ -105,17 +101,14 @@ impl Status {
     (self.status.load(OSeqCst) & FLAG_PEER_HUP) != 0
   }
 
-  // TODO: The ClientStatus enum will one day expose semantic status info
-  // such as congestion control level, # of dropped packets, etc
-  // For now, the only info is that the connection is active.
-  pub fn check_client(&self) -> io::Result<ClientStatus> {
+  pub fn check_err(&self) -> io::Result<()> {
     let status = self.status.load(OSeqCst);
-    self.check_client_flag_io_err(status)?;
-    self.check_client_flags_hup(status)?;
-    Ok(ClientStatus::Active)
+    self.check_flag_io_err(status)?;
+    self.check_flags_hup(status)?;
+    Ok(())
   }
 
-  fn check_client_flag_io_err(&self, status: u32) -> io::Result<()> {
+  fn check_flag_io_err(&self, status: u32) -> io::Result<()> {
     if (status & FLAG_IO_ERR) != 0 {
       match self.errno.load(OSeqCst) {
         ERRNO_CLEAR => Err(error::unknown()),
@@ -126,7 +119,7 @@ impl Status {
     }
   }
 
-  fn check_client_flags_hup(&self, status: u32) -> io::Result<()> {
+  fn check_flags_hup(&self, status: u32) -> io::Result<()> {
     if (status & FLAGS_HUP) != 0 {
       Err(error::use_after_hup())
     } else {

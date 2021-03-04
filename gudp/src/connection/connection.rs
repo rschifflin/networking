@@ -34,7 +34,7 @@ impl Connection {
 
     pub fn send(&self, buf: &[u8]) -> io::Result<usize> {
       let (ref _buf_read, ref buf_write, ref status) = *self.shared;
-      status.check_client()?;
+      status.check_err()?;
 
       let mut buf_write = buf_write.lock().map_err(error::poisoned_write_lock)?;
       let push_result = buf_write.push_back(buf);
@@ -49,10 +49,10 @@ impl Connection {
       let (ref buf_read, ref _buf_write, ref status) = *self.shared;
       let mut buf_read = buf_read.lock().map_err(error::poisoned_read_lock)?;
 
-      let mut health = status.check_client();
+      let mut health = status.check_err();
       while buf_read.count() <= 0 && health.is_ok() {
         buf_read = buf_read.wait().map_err(error::poisoned_read_lock)?;
-        health = status.check_client();
+        health = status.check_err();
       }
 
       // We arrive here only if the read buffer has data or the status is closed.
@@ -93,7 +93,7 @@ impl Connection {
             None => Err(error::no_space_to_read())
           }
         } else {
-          status.check_client().map(|_| None)
+          status.check_err().map(|_| None)
         }
       }).transpose()
     }

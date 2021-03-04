@@ -23,7 +23,7 @@ pub fn no_space_to_read() -> io::Error {
 }
 
 pub fn use_after_hup() -> io::Error {
-  io::Error::new(io::ErrorKind::ConnectionReset, "Attempted to use after graceful close.")
+  io::Error::new(io::ErrorKind::ConnectionReset, "Attempted to use after receiver (or sender) hung up.")
 }
 
 pub fn unknown() -> io::Error {

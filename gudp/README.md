@@ -27,7 +27,7 @@ Components:
 Each connection includes a pair of read/write buffers shared between the daemon thread
 and the application thread. The daemon thread pushes socket reads into the read buffer while
 the app thread pulls reads out, and so the two threads may contend for the same buffer.
-Additionally, we would like app sockets to be easily sharable, meaning potentially n consumers will pull from the same read buffer.
+Additionally, we would like app connections to be cloneable, meaning potentially n consumers will pull from the same read buffer.
 (Note: the daemon thread will be the sole source of pushing to the read buffer)
 
 In order to handle resource contention, consider the following naive policy:
@@ -47,7 +47,7 @@ There is a slight wrinkle to the above approach. At any point we want to be able
 
 Whenever the producer on the daemon thread sees a final status, it will be responsible for notifying _all_ consumers once again (AFTER acquiring the read buffer lock!!), even if the read condition does not hold. Thus, consumers attempting to read must actually check two conditions:
 - There are reads available (count > 0) *OR*
-- The connection is finished.
+- The connection is finished according to the status atomic.
 
 Note: Although the producer will acquire the read buffer lock before signalling to the consumers a final status (aka no more reads will be coming), in general consumers are _NOT_ restricted by the read buffer mutex when setting the status flags themselves. This is allowed due to an invariant which *must hold*:
 
@@ -58,13 +58,13 @@ The status flags must NEVER be changed from a final state back to a working stat
 This invariant is enforced by the state::Status api, which makes sure any
 writes do not trample the bits which represent a closed state.
 
-## TODO: The virtual connection
+## The virtual connection
 There are a lot of subtle edge cases when handling virtual connections and properly freeing resources.
 The following is a general description:
   On the daemon thread, connections are tracked in hashmap of Mio Token -> socket object,
   where socket objects contain the underlying Mio UdpSocket and various connection properties such as peer type.
 
-  Connections created via ACTIVE OPEN provide a connection directly to the app thread, without requiring a listener.
+  Connections created via a direct connect() call are an ACTIVE OPEN and provide a connection directly to the app thread, without requiring a listener.
   On the daemon thread, they are marked by a socket of PeerType::Active.
   This variant includes the state machine of the single directly-connected peer.
   Whenever the underlying Mio UdpSocket closes (either the app hangs up,
@@ -75,13 +75,13 @@ The following is a general description:
   This gracefully cleans up the connection resources, and allows the app thread to still drain its read queue until it observes the now-closed status,
   at which point it knows no future reads/writes are possible and can be safely drop its half.
 
-  Connections created via PASSIVE OPEN provide a Listener to the app thread.
+  Connections created via calls to listen() are a PASSIVE OPEN and provide a Listener to the app thread.
   On the daemon thread, they are marked by a socket of PeerType::Passive.
   This variant includes a hash of currently connected peer addresses to their state machines,
   a marker set of peer addresses with pending writes,
   and a listen option whose presence indicates listening for new peers and whose value is the machinery needed to build a new connection.
 
-  When the app thread drops its Listener, the following actions occur:
+  When the app thread drops its Listener, the following actions occur on the daemon thread:
     - The listen option is set to None.
     - IF there are no peers left still connected:
       - the mio udpsocket is unregistered from the evented io poller
@@ -102,11 +102,11 @@ The following is a general description:
   This gracefully cleans up the connection resources, allows the app thread connections to still drain their read queues, and
   removes listener io resources only if and exactly when they have no connections remaining.
 
-  NOTE: When the app drops a connection, it sets the app hup status. While this does not trigger an event directly on the daemon event loop,
+  NOTE: When the app thread drops a connection, it sets the app hup status. While this does not trigger an event directly on the daemon event loop,
   eventually the write inactivity will cause a heartbeat, and when sending a heartbeat the daemon checks for closed connections and will clean up
   as specified above.
 
-#### Timers
+## Timers
   The virtual connection is temporal- a connection to a peer is implicitly assumed whenever datagrams are being received from said peer.
   After a period of inactivty, the peer is disconnected. To keep the connection alive, a regular heartbeat interval timer sends out
   empty updates (if no other sends have occured since the last heartbeat). Since the goal is a best-effort reliability protocol,

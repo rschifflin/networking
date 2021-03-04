@@ -39,7 +39,6 @@ impl Listener {
     Listener { on_close, rx }
   }
   // Block until connection is established or the daemon dies trying I guess
-  // TODO: What happens when listeners drop before calling accept?? And what _should_ happen ideally?
   pub fn accept(&self) -> io::Result<Connection> {
     match self.rx.recv() {
       Ok(FromDaemon::Connection(on_write, shared, id)) => Ok(Connection::new(on_write, shared, id)),
