@@ -16,7 +16,7 @@ fn main() {
     let src_addr = format!("127.0.0.1:{}", src_port);
     let socket = std::net::UdpSocket::bind(src_addr).expect("Could not bind");
     socket.set_nonblocking(true).expect("Could not set nonblocking!");
-    let conn = gudp::connect(&service, socket, &dst_addr).expect("Could not connect gudp");
+    let conn = service.connect(socket, &dst_addr).expect("Could not connect gudp");
     threads.push(std::thread::spawn(|| fire(conn)));
     std::thread::sleep(std::time::Duration::from_millis(10));
   }

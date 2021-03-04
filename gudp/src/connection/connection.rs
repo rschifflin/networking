@@ -1,12 +1,7 @@
-use std::net::{UdpSocket, SocketAddr, ToSocketAddrs};
+use std::net::SocketAddr;
 use std::sync::Arc;
 
-use crossbeam::channel;
-use log::warn;
-
-use crate::Service;
-use crate::Listener;
-use crate::types::{OnWrite, FromDaemon, ToDaemon};
+use crate::types::OnWrite;
 use crate::state;
 use crate::error;
 
@@ -105,36 +100,4 @@ impl Connection {
     pub fn peer_addr(&self) -> SocketAddr {
       self.id.1
     }
-}
-
-pub fn connect<A: ToSocketAddrs>(service: &Service, socket: UdpSocket, to_addr: A) -> io::Result<Connection> {
-  let peer_addr = to_addr.to_socket_addrs().and_then(|mut addr| {
-    addr.next()
-      .map(Ok)
-      .unwrap_or_else(|| Err(error::socket_addr_failed_to_resolve()))
-  })?;
-
-  let (tx, rx) = channel::bounded(2);
-  let (tx_to_daemon, waker) = service.clone_parts();
-  tx_to_daemon.send(ToDaemon::Connect(socket, tx, peer_addr))
-    .map_err(error::cannot_send_to_daemon)?;
-
-  // Force daemon to handle this new connection immediately
-  waker.wake().map_err(error::wake_failed)?;
-
-  // Close any spurious listeners
-  rx.recv()
-    .map_err(error::cannot_recv_from_daemon)
-    .and_then(|received| match received {
-      FromDaemon::Connection(on_write, shared, id) => Ok(Connection::new(on_write, shared, id)),
-
-      // This is unexpected. We only wanted a Connection message.
-      // Close the given listener and signal the issue;
-      FromDaemon::Listener(on_close) => {
-        warn!("When trying to register directly connected socket, received Listener instead");
-        let listener = Listener::new(on_close, rx);
-        drop(listener);
-        Err(error::unexpected_recv_from_daemon())
-      }
-    })
 }

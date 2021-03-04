@@ -9,7 +9,7 @@ fn main() {
   socket.set_nonblocking(true).expect("Could not set nonblocking!");
 
   let service = gudp::Service::initialize().expect("Could not initialize gudp service");
-  let listener = gudp::listen(&service, socket).expect("Could not start listener");
+  let listener = service.listen(socket).expect("Could not start listener");
   listen(listener, listen_port);
 }
 

@@ -17,10 +17,10 @@ fn main() {
 
   let service = gudp::Service::initialize().expect("Could not initialize gudp service");
   if let Some("-l") = args.next().as_deref() {
-    let listener = gudp::listen(&service, socket).expect("Could not start listener");
+    let listener = service.listen(socket).expect("Could not start listener");
     listen(listener, src_port);
   } else {
-    let connection = gudp::connect(&service, socket, dst_addr).expect("Could not connect gudp");
+    let connection = service.connect(socket, dst_addr).expect("Could not connect gudp");
     ping(connection)
   }
 }
