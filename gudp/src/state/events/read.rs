@@ -2,6 +2,8 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::io;
 
+use log::trace;
+
 use crate::types::FromDaemon as ToService;
 use crate::error;
 use crate::state::{State, FSM};
@@ -67,6 +69,7 @@ impl State {
           Ok(_) => {
             // TODO: Warn if fails from src buffer too small or dst buffer full?
             buf.push_back(&mut s.buf_local[..size]).map(|_| buf.notify_one());
+            trace!("rd {}: {:?}", peer_addr, &s.buf_local[..size]);
             self.fsm = FSM::Connected;
             true
           },
@@ -80,6 +83,7 @@ impl State {
       FSM::Connected => {
         // TODO: Warn if fails from src buffer too small or dst buffer full?
         buf.push_back(&mut s.buf_local[..size]).map(|_| buf.notify_one());
+        trace!("rd {}: {:?}", peer_addr, &s.buf_local[..size]);
         true
       }
     }

@@ -9,5 +9,5 @@ pub mod time_ms {
   pub const ZERO: Duration = Duration::from_millis(0);
   pub const IOTA: Duration = Duration::from_millis(10);
   pub const HEARTBEAT: Duration = Duration::from_millis(1_000);
-  pub const TIMEOUT: Duration = Duration::from_millis(5_000);
+  pub const TIMEOUT: Duration = Duration::from_millis(15_000);
 }

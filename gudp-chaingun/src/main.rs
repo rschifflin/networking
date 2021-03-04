@@ -18,6 +18,7 @@ fn main() {
     socket.set_nonblocking(true).expect("Could not set nonblocking!");
     let conn = gudp::connect(&service, socket, &dst_addr).expect("Could not connect gudp");
     threads.push(std::thread::spawn(|| fire(conn)));
+    std::thread::sleep(std::time::Duration::from_millis(10));
   }
 
   for thread in threads {
@@ -26,6 +27,9 @@ fn main() {
 }
 
 fn fire(conn: gudp::Connection) {
+  // Long sleep (still sending heartbeats) before life
+  std::thread::sleep(std::time::Duration::from_millis(5_000));
+
   conn.send(b"Testing").expect("Failed to send");
   std::thread::sleep(std::time::Duration::from_millis(50));
   conn.send(b"1").expect("Failed to send");
@@ -33,5 +37,7 @@ fn fire(conn: gudp::Connection) {
   conn.send(b"2").expect("Failed to send");
   std::thread::sleep(std::time::Duration::from_millis(1_000));
   conn.send(b"3").expect("Failed to send");
-  std::thread::sleep(std::time::Duration::from_millis(1_000));
+
+  // Long sleep (still sending heartbeats) before death
+  std::thread::sleep(std::time::Duration::from_millis(5_000));
 }

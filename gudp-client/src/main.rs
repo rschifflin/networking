@@ -79,7 +79,6 @@ fn ping(conn: gudp::Connection) {
   let dst_port = conn.peer_addr().port();
   println!("Sending stdin from {} to {}", src_port, dst_port);
   let mut buf = [0u8; 1000];
-  let mut send_string = String::new();
   let stdin = std::io::stdin();
   let tzero = std::time::Instant::now();
   std::thread::spawn(move || loop {
@@ -96,12 +95,22 @@ fn ping(conn: gudp::Connection) {
     };
   });
 
+  let mut n = 0;
+  //let mut send_string = String::new();
   loop {
+    /*
     send_string.clear();
     stdin.read_line(&mut send_string).expect("Could not read stdin");
     send_string.pop(); // To remove the newline
     conn.send(send_string.as_bytes()).expect("Failed to send");
+    */
+    n += 1;
+    conn.send(n.to_string().as_bytes()).expect("Failed to send");
+
     let now = std::time::Instant::now();
-    println!("[To {} <{:?}>]: {}", dst_port, now.duration_since(tzero), send_string);
+    //println!("[To {} <{:?}>]: {}", dst_port, now.duration_since(tzero), send_string);
+    println!("[To {} <{:?}>]: {}", dst_port, now.duration_since(tzero), n);
+
+    std::thread::sleep(std::time::Duration::from_millis(50));
   }
 }

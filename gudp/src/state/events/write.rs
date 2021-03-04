@@ -3,6 +3,7 @@ use std::io;
 
 use mio::net::UdpSocket as MioUdpSocket;
 use bring::WithOpt;
+use log::trace;
 
 use crate::state::State;
 use crate::timer::{Timers, TimerKind, Clock};
@@ -41,7 +42,10 @@ impl State {
       let send_result = buf.with_front(&mut s.buf_local, |buf_local, bytes| {
         let send = io.send_to(&buf_local[..bytes], peer_addr);
         let opt = match send {
-          Ok(_) => WithOpt::Pop,
+          Ok(_) => {
+            trace!("wr {}: {:?}", peer_addr, &buf_local[..bytes]);
+            WithOpt::Pop
+          },
           Err(_) => WithOpt::Peek
         };
         (send, opt)
