@@ -1,5 +1,5 @@
 [package]
-name = "gudp-client"
+name = "test-harness"
 version = "0.1.0"
 authors = ["Mark Schifflin <randy.schifflin@gmail.com>"]
 edition = "2018"
@@ -8,4 +8,11 @@ edition = "2018"
 
 [dependencies]
 gudp = { path = "../gudp" }
+clock = { path = "../clock" }
 env_logger = "0.8.3"
+
+## External dependencies:
+imgui = { version = "0.5.0", features = ["glium"] }
+glium = { version = "0.27", default-features = true }
+imgui-glium-renderer = "0.5.0"
+imgui-winit-support = "0.5.0"

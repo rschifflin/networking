@@ -4,8 +4,10 @@ use std::net::SocketAddr;
 use log::trace;
 use mio::Token;
 
+use clock::Clock;
+
 use crate::socket::{Socket, PeerType};
-use crate::daemon::{LoopLocalState, poll};
+use crate::daemon::{self, poll};
 
 // Handling app writes are subtly different than socket writeable events
 // In the case of a direct connection, the two are identical
@@ -13,7 +15,7 @@ use crate::daemon::{LoopLocalState, poll};
 //  App writes are only for a given peer, and add to the pending writers list on block.
 //  Writeable events walk the list and try to write for all pending writers of an io until the io would block again.
 type TokenEntry<'a> = OccupiedEntry<'a, Token, Socket>;
-pub fn handle(mut token_entry: TokenEntry, peer_addr: SocketAddr, s: &mut LoopLocalState) {
+pub fn handle<C: Clock>(mut token_entry: TokenEntry, peer_addr: SocketAddr, s: &mut daemon::State<C>) {
   let socket = token_entry.get_mut();
   match &mut socket.peer_type {
     PeerType::Passive { peers, ref listen, pending_writes } => {

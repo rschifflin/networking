@@ -9,6 +9,7 @@ edition = "2018"
 [dependencies]
 bring = { path = "../bring" }
 cond-mutex = { path = "../cond-mutex" }
+clock  = { path = "../clock" }
 
 mio = {version = "0.7.7", features = ["net", "os-poll"] }
 crossbeam = "0.8.0"

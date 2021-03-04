@@ -3,12 +3,14 @@ use std::collections::hash_map::OccupiedEntry;
 use mio::Token;
 use log::warn;
 
+use clock::Clock;
+
 use crate::socket::{Socket, PeerType};
-use crate::daemon::{LoopLocalState, poll};
+use crate::daemon::{self, poll};
 
 type TokenEntry<'a> = OccupiedEntry<'a, Token, Socket>;
 
-pub fn handle(mut token_entry: TokenEntry, s: &mut LoopLocalState) {
+pub fn handle<C: Clock>(mut token_entry: TokenEntry, s: &mut daemon::State<C>) {
   let socket = token_entry.get_mut();
   match socket.peer_type {
     // Since Direct sockets aren't listeners, this should never occur

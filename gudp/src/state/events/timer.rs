@@ -1,12 +1,14 @@
+use clock::Clock;
+
 use crate::state::State;
 use crate::timer::TimerKind;
-use crate::daemon::LoopLocalState;
+use crate::daemon;
 use crate::warn;
 
 impl State {
   // Returns true when the connection is updated
   // Returns false when the connection has timed out
-  pub fn timer(&mut self, kind: TimerKind, s: &mut LoopLocalState) -> bool {
+  pub fn timer<C: Clock>(&mut self, kind: TimerKind, s: &mut daemon::State<C>) -> bool {
     let (ref buf_read, ref buf_write, ref status) = *self.shared;
     match kind {
       TimerKind::Timeout => {

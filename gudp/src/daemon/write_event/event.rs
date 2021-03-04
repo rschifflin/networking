@@ -4,11 +4,13 @@ use std::net::SocketAddr;
 use log::trace;
 use mio::Token;
 
+use clock::Clock;
+
 use crate::socket::{Socket, PeerType};
-use crate::daemon::{LoopLocalState, poll};
+use crate::daemon::{self, poll};
 
 type TokenEntry<'a> = OccupiedEntry<'a, Token, Socket>;
-pub fn handle(mut token_entry: TokenEntry, pending_write_keybuf: &mut Vec<SocketAddr>, s: &mut LoopLocalState) {
+pub fn handle<C: Clock>(mut token_entry: TokenEntry, pending_write_keybuf: &mut Vec<SocketAddr>, s: &mut daemon::State<C>) {
   let socket = token_entry.get_mut();
   match &mut socket.peer_type {
     PeerType::Passive { ref mut peers, ref listen, ref mut pending_writes } => {

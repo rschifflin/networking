@@ -74,9 +74,10 @@ where T: 'a + Ord + Copy {
   type Expired = Expired<'a, T>;
 
   fn add(&mut self, what: T, when: Instant) {
-    self.find(what, when).map_err(|idx| {
-      self.timers.insert(idx, (when, what, true))
-    }).ok();
+    match self.find(what, when) {
+      Ok(idx) => self.timers[idx].2 = true,
+      Err(idx) => self.timers.insert(idx, (when, what, true))
+    }
   }
 
   fn remove(&mut self, what: T, when: Instant) {

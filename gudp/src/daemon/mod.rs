@@ -3,15 +3,17 @@ use std::collections::hash_map::Entry;
 use std::sync::Arc;
 use std::io;
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use mio::{Poll, Events, Token, Waker};
 use crossbeam::channel;
 
+use clock::Clock;
+
 use crate::socket::{self, Socket};
 use crate::constants::{time_ms, WAKE_TOKEN, CONFIG_BUF_SIZE_BYTES};
 use crate::types::ToDaemon as FromService;
-use crate::timer::{self, Timers, TimerKind, SystemClock};
+use crate::timer::{self, Timers, TimerKind};
 
 mod poll;
 mod service_event;
@@ -21,7 +23,7 @@ mod write_event;
 mod listen_close_event;
 
 // Contains all the state used by the single threaded event loop handlers and state changes
-pub struct LoopLocalState {
+pub struct State<C: Clock> {
   pub poll: Poll,
   pub waker: Arc<Waker>,
   pub tx_on_write: channel::Sender<socket::Id>,
@@ -29,10 +31,12 @@ pub struct LoopLocalState {
   pub next_conn_id: usize,
   pub buf_local: Vec<u8>,
   pub timers: timer::List<(socket::Id, TimerKind)>,
-  pub clock: SystemClock
+  pub clock: C
 }
 
-pub fn spawn(poll: Poll, waker: Arc<Waker>, rx: channel::Receiver<FromService>) -> io::Result<thread::JoinHandle<io::Error>> {
+pub fn spawn<C>(poll: Poll, waker: Arc<Waker>, rx: channel::Receiver<FromService>, clock: C) -> io::Result<thread::JoinHandle<io::Error>>
+  where C: 'static + Clock + Send {
+
   thread::Builder::new()
     .name("gudp daemon".to_string())
     .spawn(move || -> io::Error {
@@ -48,7 +52,7 @@ pub fn spawn(poll: Poll, waker: Arc<Waker>, rx: channel::Receiver<FromService>) 
       let buf_local = vec![0u8; CONFIG_BUF_SIZE_BYTES];
       let timers: timer::List<(socket::Id, TimerKind)> = timer::List::new();
 
-      let mut loop_local_state = LoopLocalState {
+      let mut state = State {
         poll,
         waker,
         tx_on_write,
@@ -56,7 +60,7 @@ pub fn spawn(poll: Poll, waker: Arc<Waker>, rx: channel::Receiver<FromService>) 
         next_conn_id: 1,
         buf_local,
         timers,
-        clock: SystemClock()
+        clock
       };
 
       // A hacky alloc to iterate with mutation on the keys of the pending_write hashset
@@ -65,28 +69,28 @@ pub fn spawn(poll: Poll, waker: Arc<Waker>, rx: channel::Receiver<FromService>) 
       let mut expired_timers = Vec::with_capacity(1024);
 
       loop {
-        let timeout = loop_local_state.timers.when_next().map(|t| {
-          let now = Instant::now();
+        let timeout = state.timers.when_next().map(|t| {
+          let now = state.clock.now();
           t.checked_duration_since(now)
             .map(|timeout| Duration::max(timeout, time_ms::IOTA))
             .unwrap_or(time_ms::ZERO)
         });
 
-        match loop_local_state.poll.poll(&mut events, timeout) {
+        match state.poll.poll(&mut events, timeout) {
           Ok(()) => {
             // Clear out all msgs from service
             for msg in rx.try_iter() {
               service_event::handle(
                 msg,
                 &mut token_map,
-                &mut loop_local_state);
+                &mut state);
             }
 
             // Handle reads
             for event in events.iter() {
               if event.token() != WAKE_TOKEN && event.is_readable() {
                 if let Entry::Occupied(token_entry) = token_map.entry(event.token()) {
-                  read_event::handle(token_entry, &mut loop_local_state);
+                  read_event::handle(token_entry, &mut state);
                 }
               }
             };
@@ -94,16 +98,17 @@ pub fn spawn(poll: Poll, waker: Arc<Waker>, rx: channel::Receiver<FromService>) 
             // Handle listener close
             for token in rx_close_listener_events.try_iter() {
               if let Entry::Occupied(token_entry) = token_map.entry(token) {
-                listen_close_event::handle(token_entry, &mut loop_local_state);
+                listen_close_event::handle(token_entry, &mut state);
               }
             }
 
             // Handle timer expiry
             // NOTE: Occurs after poll read events to allow time to fill the read buffer, last chance to ack heartbeat, etc if necessary
-            expired_timers.extend(loop_local_state.timers.expire(Instant::now()));
+            let now = state.clock.now();
+            expired_timers.extend(state.timers.expire(now));
             for ((token, peer_addr), kind) in expired_timers.drain(..) {
               if let Entry::Occupied(token_entry) = token_map.entry(token) {
-                timer_event::handle(token_entry, peer_addr, kind, &mut loop_local_state);
+                timer_event::handle(token_entry, peer_addr, kind, &mut state);
               }
             }
 
@@ -111,7 +116,7 @@ pub fn spawn(poll: Poll, waker: Arc<Waker>, rx: channel::Receiver<FromService>) 
             for event in events.iter() {
               if event.token() != WAKE_TOKEN && event.is_writable() {
                 if let Entry::Occupied(token_entry) = token_map.entry(event.token()) {
-                  write_event::handle(token_entry, &mut pending_write_keybuf, &mut loop_local_state);
+                  write_event::handle(token_entry, &mut pending_write_keybuf, &mut state);
                 }
               }
             };
@@ -119,7 +124,7 @@ pub fn spawn(poll: Poll, waker: Arc<Waker>, rx: channel::Receiver<FromService>) 
             // Handle app writes
             for (token, peer_addr) in rx_write_events.try_iter() {
               if let Entry::Occupied(token_entry) = token_map.entry(token) {
-                write_event::handle_app(token_entry, peer_addr, &mut loop_local_state);
+                write_event::handle_app(token_entry, peer_addr, &mut state);
               }
             }
           },

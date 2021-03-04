@@ -7,14 +7,15 @@ use bring::bounded::Bring;
 use log::trace;
 
 use cond_mutex::CondMutex;
+use clock::Clock;
 
-use crate::timer::{Timers, TimerKind, Clock};
+use crate::timer::{Timers, TimerKind};
 use crate::state::State;
 use crate::types::READ_BUFFER_TAG;
-use crate::daemon::LoopLocalState;
+use crate::daemon;
 use crate::constants::time_ms;
 
-fn terminal(state: &State, buf_read: &CondMutex<Bring, READ_BUFFER_TAG>, s: &mut LoopLocalState) -> io::Result<bool> {
+fn terminal<C: Clock>(state: &State, buf_read: &CondMutex<Bring, READ_BUFFER_TAG>, s: &mut daemon::State<C>) -> io::Result<bool> {
   let lock = buf_read.lock().expect("Could not acquire unpoisoned read lock");
   lock.notify_all();
   state.clear_timers(s);
@@ -27,7 +28,7 @@ impl State {
   //    Ok(False) when the state has become terminal and the socket can be cleaned up
   //    Err(e) when an io error occurs on write. NOTE: It may be WouldBlock, which is non-fatal
 
-  pub fn write(&mut self, io: &mut MioUdpSocket, peer_addr: SocketAddr, s: &mut LoopLocalState) -> io::Result<bool> {
+  pub fn write<C: Clock>(&mut self, io: &mut MioUdpSocket, peer_addr: SocketAddr, s: &mut daemon::State<C>) -> io::Result<bool> {
     let (ref buf_read, ref buf_write, ref status) = *self.shared;
     // NOTE: Currently ONLY a timeout can cause a peer_hup, and socket cleanup happens immediately
     // So we don't check for peer_hup here.

@@ -1,16 +1,18 @@
 [workspace]
 
 members = [
-  "gudp-client",
-  "gudp-chaingun",
-  "gudp-echo",
+  "toys/gudp-client",
+  "toys/gudp-chaingun",
+  "toys/gudp-echo",
+  "test-harness",
   "gudp",
   "slice-pair",
   "bring",
   "cond-mutex",
-  "xor"
+  "xor",
+  "clock"
 ]
 
 default-members = [
-  "gudp-client"
+  "toys/gudp-client"
 ]

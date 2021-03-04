@@ -4,19 +4,6 @@ mod list;
 pub use list::TimerList as List;
 pub use list::Expired as Expired;
 
-/// Monotonic non-decreasing clock
-pub trait Clock {
-  fn now(&self) -> Instant;
-}
-
-pub struct SystemClock();
-
-impl Clock for SystemClock {
-  fn now(&self) -> Instant {
-    Instant::now()
-  }
-}
-
 pub trait Timers<'a> {
   type Item: PartialEq + PartialOrd + Copy;
   type Expired: 'a + Iterator<Item=Self::Item>;

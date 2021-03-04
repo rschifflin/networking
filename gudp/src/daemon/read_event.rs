@@ -3,12 +3,14 @@ use std::collections::hash_map::OccupiedEntry;
 use log::trace;
 use mio::Token;
 
+use clock::Clock;
+
 use crate::socket::{Socket, PeerType};
 use crate::state::State;
-use crate::daemon::{LoopLocalState, poll};
+use crate::daemon::{self, poll};
 
 type TokenEntry<'a> = OccupiedEntry<'a, Token, Socket>;
-pub fn handle(mut token_entry: TokenEntry, s: &mut LoopLocalState) {
+pub fn handle<C: Clock>(mut token_entry: TokenEntry, s: &mut daemon::State<C>) {
   let token = *token_entry.key();
   let socket = token_entry.get_mut();
 

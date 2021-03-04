@@ -7,7 +7,9 @@ use log::warn;
 use mio::{Token, Interest};
 use mio::net::UdpSocket as MioUdpSocket;
 
-use crate::daemon::LoopLocalState;
+use clock::Clock;
+
+use crate::daemon;
 use crate::socket::{Socket, PeerType};
 
 pub fn handle_failure(e: io::Error, token_map: &mut HashMap<Token, Socket>) -> io::Error {
@@ -41,7 +43,7 @@ pub fn handle_failure(e: io::Error, token_map: &mut HashMap<Token, Socket>) -> i
   e
 }
 
-pub fn register_io(io: StdUdpSocket, s: &mut LoopLocalState) -> Option<(Token, MioUdpSocket, SocketAddr)> {
+pub fn register_io<C: Clock>(io: StdUdpSocket, s: &mut daemon::State<C>) -> Option<(Token, MioUdpSocket, SocketAddr)> {
   // Create a mio wrapper for the socket.
   let mut conn = MioUdpSocket::from_std(io);
 
@@ -61,7 +63,7 @@ pub fn register_io(io: StdUdpSocket, s: &mut LoopLocalState) -> Option<(Token, M
 // For now, simply log if this occurs.
 // TODO: We could bubble up hanging resources to the main loop,
 // where we iterate on trying to deregister them.
-pub fn deregister_io(io: &mut MioUdpSocket, s: &LoopLocalState) {
+pub fn deregister_io<C: Clock>(io: &mut MioUdpSocket, s: &daemon::State<C>) {
   s.poll.registry().deregister(io).unwrap_or_else(|e| {
     warn!("Unable to deregister socket from poll on close. The socket fd may leak! Reason: {}", e);
   });

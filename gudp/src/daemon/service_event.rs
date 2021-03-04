@@ -4,15 +4,16 @@ use std::io;
 
 use mio::Token;
 
+use clock::Clock;
+
 use crate::socket::{Socket, PeerType, ConnOpts};
 use crate::types::FromDaemon as ToService;
 use crate::types::ToDaemon as FromService;
 use crate::state::State;
-use crate::daemon::{LoopLocalState, poll};
+use crate::daemon::{self, poll};
 use crate::error;
 
-
-pub fn handle(msg: FromService, token_map: &mut HashMap<Token, Socket>, s: &mut LoopLocalState) {
+pub fn handle<C: Clock>(msg: FromService, token_map: &mut HashMap<Token, Socket>, s: &mut daemon::State<C>) {
   match msg {
     FromService::Connect(io, respond_tx, peer_addr) => {
       match poll::register_io(io, s) {

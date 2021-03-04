@@ -1,12 +1,14 @@
+use clock::Clock;
+
 use crate::socket::{self, ConnOpts};
 use crate::state::{State, FSM, shared};
-use crate::timer::{Timers, TimerKind, Clock};
-use crate::daemon::LoopLocalState;
+use crate::timer::{Timers, TimerKind};
+use crate::daemon;
 use crate::constants::time_ms;
 use crate::warn;
 
 impl State {
-  pub fn init(socket_id: socket::Id, conn_opts: ConnOpts, s: &mut LoopLocalState) -> State {
+  pub fn init<C: Clock>(socket_id: socket::Id, conn_opts: ConnOpts, s: &mut daemon::State<C>) -> State {
     let when = s.clock.now();
     s.timers.add((socket_id, TimerKind::Timeout), when + time_ms::TIMEOUT);
     s.timers.add((socket_id, TimerKind::Heartbeat), when + time_ms::HEARTBEAT);

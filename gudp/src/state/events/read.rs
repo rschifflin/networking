@@ -4,17 +4,19 @@ use std::io;
 
 use log::trace;
 
+use clock::Clock;
+
 use crate::types::FromDaemon as ToService;
 use crate::error;
 use crate::state::{State, FSM};
-use crate::timer::{Timers, TimerKind, Clock};
-use crate::daemon::LoopLocalState;
+use crate::timer::{Timers, TimerKind};
+use crate::daemon;
 use crate::constants::time_ms;
 
 impl State {
   // Returns true when the connection is updated
   // Returns false when the connection is terminal and can be cleaned up
-  pub fn read(&mut self, local_addr: SocketAddr, peer_addr: SocketAddr, size: usize, s: &mut LoopLocalState) -> bool {
+  pub fn read<C: Clock>(&mut self, local_addr: SocketAddr, peer_addr: SocketAddr, size: usize, s: &mut daemon::State<C>) -> bool {
     s.timers.remove((self.socket_id, TimerKind::Timeout), self.last_recv + time_ms::TIMEOUT);
     let when = s.clock.now();
     self.last_recv = when;

@@ -1,8 +1,11 @@
 use std::net::{UdpSocket, ToSocketAddrs};
 use std::sync::Arc;
 use std::io;
+
 use mio::{Poll, Waker};
 use crossbeam::channel;
+
+use clock::{Clock, SystemClock};
 
 use log::warn;
 use crate::types::{FromDaemon, ToDaemon};
@@ -12,6 +15,7 @@ use crate::Connection;
 use crate::Listener;
 use crate::error;
 
+#[derive(Clone)]
 pub struct Service {
   waker: Arc<Waker>,
   to_daemon_tx: channel::Sender<ToDaemon>
@@ -19,14 +23,19 @@ pub struct Service {
 
 impl Service {
   // Starts the service, spawning the daemon thread and providing access to connections
-  pub fn initialize() -> io::Result<Service> {
+  #[inline]
+  pub fn initialize_with_clock<C: 'static + Clock + Send>(clock: C) -> io::Result<Service> {
     let (tx, other_rx) = channel::unbounded(); // Service -> Daemon
     let poll = Poll::new()?;
     let waker = Waker::new(poll.registry(), WAKE_TOKEN)?;
     let waker = Arc::new(waker);
-    daemon::spawn(poll, Arc::clone(&waker), other_rx)?;
+    daemon::spawn(poll, Arc::clone(&waker), other_rx, clock)?;
 
     Ok(Service { waker, to_daemon_tx: tx })
+  }
+
+  pub fn initialize() -> io::Result<Service> {
+    Self::initialize_with_clock(SystemClock())
   }
 
   pub fn connect<A: ToSocketAddrs>(&self, socket: UdpSocket, to_addr: A) -> io::Result<Connection> {
@@ -89,6 +98,10 @@ impl Service {
         // A closed rx means the daemon cannot register our io for some reason
         Err(_) => Err(error::cannot_register_with_daemon())
       }
+  }
+
+  pub fn wake(&self) -> io::Result<()> {
+    self.waker.wake()
   }
 
   fn clone_parts(&self) -> (channel::Sender<ToDaemon>, Arc<Waker>) {
