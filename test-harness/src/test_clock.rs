@@ -14,9 +14,9 @@ impl TestClock {
     }
   }
 
-  pub fn tick_1s(&self) {
+  pub fn tick_ms(&self, amount_ms: u64) {
     let mut now = self.now.lock().expect("Could not acquire unpoisoned test clock mutex");
-    *now = *now + Duration::from_millis(1_000);
+    *now = *now + Duration::from_millis(amount_ms);
   }
 }
 

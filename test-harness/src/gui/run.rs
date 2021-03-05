@@ -33,8 +33,8 @@ pub fn run(args: Args, event_loop: EventLoop<()>, mut ui_sys: sys::System, displ
 
         state.transition_socket(&args, &mut recv_buf);
         let frame = ui_sys.imgui.frame();
-        let ui_out = ui::populate_frame(&frame, &state.ui_in());
-        state.transition_ui(&args, ui_out);
+        ui::populate_frame(&frame, &mut state);
+        state.transition_ui(&args);
 
         // As a side effect, we have an imgui frame in memory we can draw
         let mut target = display.draw();
