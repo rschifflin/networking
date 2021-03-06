@@ -28,7 +28,6 @@ fn main() {
 }
 
 fn listen(listener: gudp::Listener, src_port: u16) {
-  println!("Echoing messages from {}", src_port);
   loop {
     let conn = listener.accept().expect("Could not accept connection on listener");
     std::thread::spawn(move || { on_accept(conn) });
@@ -38,13 +37,14 @@ fn listen(listener: gudp::Listener, src_port: u16) {
 fn on_accept(conn: gudp::Connection) -> std::io::Result<()> {
   let src_port = conn.local_addr().port();
   let dst_port = conn.peer_addr().port();
-  println!("Accepted connection on {} for messages from {}", src_port, dst_port);
   let mut buf = [0u8; 1000];
   loop {
     let recv_len = conn.recv(&mut buf)?;
-    let recv_str = std::str::from_utf8(&buf[..recv_len]).expect("Did not recv utf8");
-    if recv_str != "ping" {
-      conn.send(recv_str.as_bytes()).expect("Could not send");
+    match std::str::from_utf8(&buf[..recv_len]) {
+      Ok("ping") => { /* heartbeat */ },
+      _ => {
+        conn.send(&buf[..recv_len]).expect("Could not send");
+      }
     }
   }
 }
