@@ -8,8 +8,9 @@ pub mod input {
 
     // Header
     pub magic_bytes_hexstring: ImString,
-    pub most_recent_ack_numstring: ImString,
-    pub ack_tail_bitstring: ImString,
+    pub local_sequence_no_numstring: ImString,
+    pub remote_sequence_no_numstring: ImString,
+    pub remote_sequence_tail_bitstring: ImString,
 
     // Payload
     pub payload_string: ImString
@@ -17,8 +18,10 @@ pub mod input {
 
   impl Default for Fields {
     fn default() -> Fields {
-      let mut most_recent_ack_numstring = ImString::with_capacity(128);
-      most_recent_ack_numstring.push_str("0");
+      let mut local_sequence_no_numstring = ImString::with_capacity(128);
+      local_sequence_no_numstring.push_str("0");
+      let mut remote_sequence_no_numstring = ImString::with_capacity(128);
+      remote_sequence_no_numstring.push_str("0");
 
       Fields {
         send_hexstring: ImString::with_capacity(128),
@@ -26,8 +29,9 @@ pub mod input {
         tick_amount: 1000,
         elapsed_string: ImString::new("0s"),
         magic_bytes_hexstring: ImString::new("deadbeef"),
-        most_recent_ack_numstring,
-        ack_tail_bitstring: ImString::new("00000000 00000000 00000000 00000000"),
+        local_sequence_no_numstring,
+        remote_sequence_no_numstring,
+        remote_sequence_tail_bitstring: ImString::new("00000000 00000000 00000000 00000000"),
         payload_string: ImString::with_capacity(128),
       }
     }

@@ -87,21 +87,30 @@ impl State {
     self.to_send.push(u8::from_str_radix(&magic_bytes_hexstring[4..6], 16).unwrap_or(0));
     self.to_send.push(u8::from_str_radix(&magic_bytes_hexstring[6..8], 16).unwrap_or(0));
 
-    let most_recent_ack_numstring = self.fields.most_recent_ack_numstring.to_string();
-    let most_recent_ack = most_recent_ack_numstring.parse::<u32>().unwrap_or(0);
+    let local_sequence_no_numstring = self.fields.local_sequence_no_numstring.to_string();
+    let local_sequence_no = local_sequence_no_numstring.parse::<u32>().unwrap_or(0);
 
     // Network endian
-    self.to_send.push((most_recent_ack >> 24) as u8);
-    self.to_send.push(((most_recent_ack & 0b11111111_00000000_00000000) >> 16) as u8);
-    self.to_send.push(((most_recent_ack & 0b11111111_00000000) >> 8) as u8);
-    self.to_send.push((most_recent_ack & 0b11111111) as u8);
+    self.to_send.push((local_sequence_no >> 24) as u8);
+    self.to_send.push(((local_sequence_no & 0b11111111_00000000_00000000) >> 16) as u8);
+    self.to_send.push(((local_sequence_no & 0b11111111_00000000) >> 8) as u8);
+    self.to_send.push((local_sequence_no & 0b11111111) as u8);
+
+    let remote_sequence_no_numstring = self.fields.remote_sequence_no_numstring.to_string();
+    let remote_sequence_no = remote_sequence_no_numstring.parse::<u32>().unwrap_or(0);
+
+    // Network endian
+    self.to_send.push((remote_sequence_no >> 24) as u8);
+    self.to_send.push(((remote_sequence_no & 0b11111111_00000000_00000000) >> 16) as u8);
+    self.to_send.push(((remote_sequence_no & 0b11111111_00000000) >> 8) as u8);
+    self.to_send.push((remote_sequence_no & 0b11111111) as u8);
 
     // Note: index 8, 17, and 26 are whitespace
-    let ack_tail_bitstring = self.fields.ack_tail_bitstring.to_string();
-    self.to_send.push(u8::from_str_radix(&ack_tail_bitstring[..8], 2).unwrap_or(0));
-    self.to_send.push(u8::from_str_radix(&ack_tail_bitstring[9..17], 2).unwrap_or(0));
-    self.to_send.push(u8::from_str_radix(&ack_tail_bitstring[18..26], 2).unwrap_or(0));
-    self.to_send.push(u8::from_str_radix(&ack_tail_bitstring[27..35], 2).unwrap_or(0));
+    let remote_sequence_tail_bitstring = self.fields.remote_sequence_tail_bitstring.to_string();
+    self.to_send.push(u8::from_str_radix(&remote_sequence_tail_bitstring[..8], 2).unwrap_or(0));
+    self.to_send.push(u8::from_str_radix(&remote_sequence_tail_bitstring[9..17], 2).unwrap_or(0));
+    self.to_send.push(u8::from_str_radix(&remote_sequence_tail_bitstring[18..26], 2).unwrap_or(0));
+    self.to_send.push(u8::from_str_radix(&remote_sequence_tail_bitstring[27..35], 2).unwrap_or(0));
 
     let payload = self.fields.payload_string.to_string();
     self.to_send.extend(payload.as_bytes());

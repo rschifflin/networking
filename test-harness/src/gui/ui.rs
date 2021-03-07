@@ -58,14 +58,20 @@ pub fn populate_frame<'a>(ui: &imgui::Ui, state: &mut State) {
               sanitize_hexstring(&mut state.fields.magic_bytes_hexstring, 8);
           }
 
-          if ui.input_text(im_str!("Most recent ack"), &mut state.fields.most_recent_ack_numstring)
+          if ui.input_text(im_str!("Local sequence number"), &mut state.fields.local_sequence_no_numstring)
             .chars_decimal(true)
             .build() {
-              sanitize_u32(&mut state.fields.most_recent_ack_numstring);
+              sanitize_u32(&mut state.fields.local_sequence_no_numstring);
           }
 
-          if ui.input_text(im_str!("Ack tail (Newest <-> Oldest) "), &mut state.fields.ack_tail_bitstring).build() {
-            sanitize_bitstring(&mut state.fields.ack_tail_bitstring, 32)
+          if ui.input_text(im_str!("Remote sequence number"), &mut state.fields.remote_sequence_no_numstring)
+            .chars_decimal(true)
+            .build() {
+              sanitize_u32(&mut state.fields.remote_sequence_no_numstring);
+          }
+
+          if ui.input_text(im_str!("Remote sequence tail (Newest <-> Oldest) "), &mut state.fields.remote_sequence_tail_bitstring).build() {
+            sanitize_bitstring(&mut state.fields.remote_sequence_tail_bitstring, 32)
           }
 
           ui.spacing();
