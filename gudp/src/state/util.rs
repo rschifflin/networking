@@ -1,3 +1,5 @@
+use std::net::SocketAddr;
+
 use clock::Clock;
 
 use crate::daemon;

@@ -1,5 +1,6 @@
 use std::sync::Arc;
 use std::time::Instant;
+use std::net::SocketAddr;
 
 use crate::socket::{self, ConnOpts};
 
@@ -15,9 +16,12 @@ mod util;
 /// Tracks all the behavior of a given connection
 pub struct State {
   pub shared: Arc<Shared>,
+  pub local_addr: SocketAddr,
   pub socket_id: socket::Id,
   pub last_recv: Instant,
   pub last_send: Instant,
+
+  // TODO: sent_buffer of sequenceNo => (acked? acktime?)
   pub fsm: FSM
 }
 

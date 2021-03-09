@@ -1,4 +1,5 @@
 use std::io;
+use std::net::SocketAddr;
 
 use clock::{Clock, SystemClock};
 
@@ -15,6 +16,21 @@ macro_rules! impl_builder {
   ( $builder:ty ) => {
     pub fn example(mut self, example: usize) -> $builder {
       self.conf.example = example;
+      self
+    }
+
+    pub fn on_packet_sent(mut self, f: Box<dyn FnMut((SocketAddr, SocketAddr), &[u8], usize) + Send>) -> $builder {
+      self.conf.on_packet_sent = Some(f);
+      self
+    }
+
+    pub fn on_packet_acked(mut self, f: Box<dyn FnMut((SocketAddr, SocketAddr), usize) + Send>) -> $builder {
+      self.conf.on_packet_acked = Some(f);
+      self
+    }
+
+    pub fn on_packet_lost(mut self, f: Box<dyn FnMut((SocketAddr, SocketAddr), usize) + Send>) -> $builder {
+      self.conf.on_packet_lost = Some(f);
       self
     }
   }

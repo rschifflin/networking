@@ -35,7 +35,7 @@ impl Service {
     let poll = Poll::new()?;
     let waker = Waker::new(poll.registry(), WAKE_TOKEN)?;
     let waker = Arc::new(waker);
-    daemon::spawn(poll, Arc::clone(&waker), other_rx, clock)?;
+    daemon::spawn(poll, Arc::clone(&waker), other_rx, conf, clock)?;
 
     Ok(Service { waker, to_daemon_tx: tx })
   }

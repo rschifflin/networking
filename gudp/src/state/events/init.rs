@@ -1,3 +1,5 @@
+use std::net::SocketAddr;
+
 use clock::Clock;
 
 use crate::socket::{self, ConnOpts};
@@ -8,7 +10,7 @@ use crate::constants::time_ms;
 use crate::warn;
 
 impl State {
-  pub fn init<C: Clock>(socket_id: socket::Id, conn_opts: ConnOpts, s: &mut daemon::State<C>) -> State {
+  pub fn init<C: Clock>(local_addr: SocketAddr, socket_id: socket::Id, conn_opts: ConnOpts, s: &mut daemon::State<C>) -> State {
     let when = s.clock.now();
     s.timers.add((socket_id, TimerKind::Timeout), when + time_ms::TIMEOUT);
     s.timers.add((socket_id, TimerKind::Heartbeat), when + time_ms::HEARTBEAT);
@@ -18,6 +20,7 @@ impl State {
 
     State {
       shared: shared::new(),
+      local_addr,
       socket_id,
       last_recv: when,
       last_send: when,

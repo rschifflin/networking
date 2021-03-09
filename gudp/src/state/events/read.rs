@@ -61,8 +61,12 @@ impl State {
         match conn_opts.tx_to_service.send(ToService::Connection(Arc::new(on_write), Arc::clone(&self.shared), (local_addr, peer_addr))) {
           Ok(_) => {
             // TODO: Warn if fails from src buffer too small or dst buffer full?
-            buf.push_back(&mut s.buf_local[..size]).map(|_| buf.notify_one());
-            trace!("rd {}: {:?}", peer_addr, &s.buf_local[..size]);
+            buf.push_back(&mut s.buf_local[..size]).map(|_| {
+              // TODO: Update acks (and call on_packet_acked when not heartbeat)
+              if let Some(f) = &mut s.conf.on_packet_acked { f((self.local_addr, peer_addr), 0); }
+              buf.notify_one();
+            });
+
             self.fsm = FSM::Connected;
             true
           },
@@ -75,7 +79,11 @@ impl State {
       },
       FSM::Connected => {
         // TODO: Warn if fails from src buffer too small or dst buffer full?
-        buf.push_back(&mut s.buf_local[..size]).map(|_| buf.notify_one());
+        buf.push_back(&mut s.buf_local[..size]).map(|_| {
+          // TODO: Update acks (and call on_packet_acked when not heartbeat)
+          if let Some(f) = &mut s.conf.on_packet_acked { f((self.local_addr, peer_addr), 0); }
+          buf.notify_one();
+        });
         trace!("rd {}: {:?}", peer_addr, &s.buf_local[..size]);
         true
       }

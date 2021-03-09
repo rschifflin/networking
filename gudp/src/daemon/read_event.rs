@@ -13,6 +13,7 @@ type TokenEntry<'a> = OccupiedEntry<'a, Token, Socket>;
 pub fn handle<C: Clock>(mut token_entry: TokenEntry, s: &mut daemon::State<C>) {
   let token = *token_entry.key();
   let socket = token_entry.get_mut();
+  let local_addr = socket.local_addr;
 
   // socket read loop
   // early return on wouldblock
@@ -67,7 +68,7 @@ pub fn handle<C: Clock>(mut token_entry: TokenEntry, s: &mut daemon::State<C>) {
               /* create+handle new peer */
               (None, Some(conn_opts)) => {
                 let socket_id = (token, peer_addr);
-                let mut peer_state = State::init(socket_id, conn_opts.clone(), s);
+                let mut peer_state = State::init(local_addr, socket_id, conn_opts.clone(), s);
 
                 // If state update fails, we simply don't insert the new peer
                 if peer_state.read(socket.local_addr, peer_addr, size, s) {

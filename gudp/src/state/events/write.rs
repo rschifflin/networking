@@ -43,13 +43,12 @@ impl State {
       }
 
       let buf = &mut *buf_write;
+
+      // TODO: Prefix buf_local with header, seq no, etc
       let send_result = buf.with_front(&mut s.buf_local, |buf_local, bytes| {
         let send = io.send_to(&buf_local[..bytes], peer_addr);
         let opt = match send {
-          Ok(_) => {
-            trace!("wr {}: {:?}", peer_addr, &buf_local[..bytes]);
-            WithOpt::Pop
-          },
+          Ok(_) => WithOpt::Pop,
           Err(_) => WithOpt::Peek
         };
         (send, opt)
@@ -57,7 +56,9 @@ impl State {
 
       match send_result {
         /* Write OK */
-        Some(Ok(_)) => {
+        Some(Ok(size)) => {
+          if let Some(f) = &mut s.conf.on_packet_sent { f((self.local_addr, peer_addr), &s.buf_local[..size], 0); }
+
           s.timers.remove((self.socket_id, TimerKind::Heartbeat), self.last_send + time_ms::HEARTBEAT);
           let when = s.clock.now();
           self.last_send = when;

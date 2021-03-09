@@ -19,6 +19,12 @@ fn main() {
 
   let service = gudp::Builder::new()
     .clock(tclock.clone())
+    .on_packet_sent(Box::new(|(local_addr, peer_addr), buf, sequence_no| {
+      println!("wrote [{}] {}=>{}: {:?}", sequence_no, local_addr, peer_addr, buf);
+    }))
+    .on_packet_acked(Box::new(|(local_addr, peer_addr), sequence_no| {
+      println!("acked [{}] {}=>{}", sequence_no, local_addr, peer_addr);
+    }))
     .build()
     .expect("Could not initialize gudp service");
 

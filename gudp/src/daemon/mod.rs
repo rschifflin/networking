@@ -14,6 +14,7 @@ use crate::socket::{self, Socket};
 use crate::constants::{time_ms, WAKE_TOKEN, CONFIG_BUF_SIZE_BYTES};
 use crate::types::ToDaemon as FromService;
 use crate::timer::{self, Timers, TimerKind};
+use crate::service::Conf;
 
 mod poll;
 mod service_event;
@@ -31,11 +32,17 @@ pub struct State<C: Clock> {
   pub next_conn_id: usize,
   pub buf_local: Vec<u8>,
   pub timers: timer::List<(socket::Id, TimerKind)>,
+  pub conf: Conf,
   pub clock: C
 }
 
-pub fn spawn<C>(poll: Poll, waker: Arc<Waker>, rx: channel::Receiver<FromService>, clock: C) -> io::Result<thread::JoinHandle<io::Error>>
-  where C: 'static + Clock + Send {
+pub fn spawn<C>(
+  poll: Poll,
+  waker: Arc<Waker>,
+  rx: channel::Receiver<FromService>,
+  conf: Conf,
+  clock: C) -> io::Result<thread::JoinHandle<io::Error>>
+where C: 'static + Clock + Send {
 
   thread::Builder::new()
     .name("gudp daemon".to_string())
@@ -60,6 +67,7 @@ pub fn spawn<C>(poll: Poll, waker: Arc<Waker>, rx: channel::Receiver<FromService
         next_conn_id: 1,
         buf_local,
         timers,
+        conf,
         clock
       };
 
