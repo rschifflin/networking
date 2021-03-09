@@ -16,7 +16,12 @@ fn main() {
 
 
   let tclock = test_clock::TestClock::new(std::time::Instant::now());
-  let service = gudp::Service::initialize_with_clock(tclock.clone()).expect("Could not initialize gudp service");
+
+  let service = gudp::Builder::new()
+    .clock(tclock.clone())
+    .build()
+    .expect("Could not initialize gudp service");
+
   let listener = service.listen(socket).expect("Could not start listener");
   std::thread::spawn(move || listen(listener, listen_port));
 

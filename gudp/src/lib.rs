@@ -10,4 +10,4 @@ mod types;
 mod timer;
 
 pub use connection::{Connection, Listener};
-pub use service::Service;
+pub use service::{Builder, Service};

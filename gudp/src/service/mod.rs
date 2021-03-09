@@ -15,6 +15,12 @@ use crate::Connection;
 use crate::Listener;
 use crate::error;
 
+mod builder;
+mod conf;
+
+pub use builder::Builder;
+pub use conf::Conf;
+
 #[derive(Clone)]
 pub struct Service {
   waker: Arc<Waker>,
@@ -24,7 +30,7 @@ pub struct Service {
 impl Service {
   // Starts the service, spawning the daemon thread and providing access to connections
   #[inline]
-  pub fn initialize_with_clock<C: 'static + Clock + Send>(clock: C) -> io::Result<Service> {
+  pub fn initialize_with_clock<C: 'static + Clock + Send>(conf: Conf, clock: C) -> io::Result<Service> {
     let (tx, other_rx) = channel::unbounded(); // Service -> Daemon
     let poll = Poll::new()?;
     let waker = Waker::new(poll.registry(), WAKE_TOKEN)?;
@@ -34,8 +40,8 @@ impl Service {
     Ok(Service { waker, to_daemon_tx: tx })
   }
 
-  pub fn initialize() -> io::Result<Service> {
-    Self::initialize_with_clock(SystemClock())
+  pub fn initialize(conf: Conf) -> io::Result<Service> {
+    Self::initialize_with_clock(conf, SystemClock())
   }
 
   pub fn connect<A: ToSocketAddrs>(&self, socket: UdpSocket, to_addr: A) -> io::Result<Connection> {
