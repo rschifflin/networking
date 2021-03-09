@@ -19,7 +19,7 @@ pub type Shared = (
 fn initial_write_ring_buf() -> Bring {
   let buf_write_vec = vec![0u8; CONFIG_BUF_SIZE_BYTES];
   let mut ring_buf = Bring::from_vec(buf_write_vec);
-  ring_buf.push_back(b"ping").expect("Could not initialize write ring buffer with ping data!");
+  ring_buf.push_back(&[]).expect("Could not initialize write ring buffer with ping data!");
   ring_buf
 }
 

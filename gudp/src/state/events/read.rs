@@ -11,7 +11,7 @@ use crate::error;
 use crate::state::{State, FSM};
 use crate::timer::{Timers, TimerKind};
 use crate::daemon;
-use crate::constants::time_ms;
+use crate::constants::{header, time_ms};
 
 impl State {
   // Returns true when the connection is updated
@@ -60,12 +60,15 @@ impl State {
 
         match conn_opts.tx_to_service.send(ToService::Connection(Arc::new(on_write), Arc::clone(&self.shared), (local_addr, peer_addr))) {
           Ok(_) => {
-            // TODO: Warn if fails from src buffer too small or dst buffer full?
-            buf.push_back(&mut s.buf_local[..size]).map(|_| {
-              // TODO: Update acks (and call on_packet_acked when not heartbeat)
-              if let Some(f) = &mut s.conf.on_packet_acked { f((self.local_addr, peer_addr), 0); }
-              buf.notify_one();
-            });
+            // Discard heartbeats (aka empty payloads)
+            // TODO: Do we ack if we can't push back?
+            if size > header::SIZE_BYTES {
+              // TODO: Warn if fails from src buffer too small or dst buffer full?
+              buf.push_back(&mut s.buf_local[header::SIZE_BYTES..size]).map(|_| {
+                buf.notify_one();
+              });
+              ack((self.local_addr, peer_addr), s);
+            }
 
             self.fsm = FSM::Connected;
             true
@@ -78,15 +81,27 @@ impl State {
         }
       },
       FSM::Connected => {
-        // TODO: Warn if fails from src buffer too small or dst buffer full?
-        buf.push_back(&mut s.buf_local[..size]).map(|_| {
-          // TODO: Update acks (and call on_packet_acked when not heartbeat)
-          if let Some(f) = &mut s.conf.on_packet_acked { f((self.local_addr, peer_addr), 0); }
-          buf.notify_one();
-        });
-        trace!("rd {}: {:?}", peer_addr, &s.buf_local[..size]);
+        // Discard heartbeats (aka empty payloads)
+        // TODO: Do we ack if we can't push back?
+        if size > header::SIZE_BYTES {
+          // TODO: Warn if fails from src buffer too small or dst buffer full?
+          buf.push_back(&mut s.buf_local[header::SIZE_BYTES..size]).map(|_| {
+            // TODO: Update acks (and call on_packet_acked when not heartbeat)
+            buf.notify_one();
+          });
+          ack((self.local_addr, peer_addr), s);
+        }
+
         true
       }
     }
+  }
+}
+
+pub fn ack<C: Clock>(addr_pair: (SocketAddr, SocketAddr), s: &mut daemon::State<C>) {
+  if let Some(f) = &mut s.conf.on_packet_acked {
+    let bytes = &s.buf_local[header::REMOTE_SEQ_NO_RANGE];
+    let ack = u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+    f(addr_pair, ack);
   }
 }

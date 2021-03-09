@@ -13,11 +13,30 @@ pub struct AllocNever();
 impl Alloc for AllocGrow {}
 impl Alloc for AllocNever {}
 
-// Choice of what to do with the front blob when calling with_front:
+// Choice of what to do with the front blob when calling front:
 #[derive(Copy, Clone, Debug)]
 pub enum WithOpt {
   Peek, // to keep it in the ring buffer
   Pop   // or to drop it
+}
+
+// The current front of the buffer, awaiting determination on whether to pop or not
+pub struct Front<'a, T: Alloc> {
+  pub size_bytes: usize,
+
+  bring: &'a mut Bring<T>,
+  src_size_bytes: usize,
+}
+
+impl<'a, T: Alloc> Front<'a, T> {
+  pub fn with<F, R>(&mut self, then: F) -> R
+  where F: FnOnce(usize) -> (R, WithOpt) {
+    let (res, opt) = then(self.size_bytes);
+    if let WithOpt::Pop = opt {
+      self.bring.drop_front(self.src_size_bytes);
+    }
+    res
+  }
 }
 
 #[derive(Debug)]
@@ -59,14 +78,9 @@ impl<T: Alloc> Bring<T> {
     self.head_idx >= self.next_idx
   }
 
-  pub fn with_front<F, R>(&mut self, dst: &mut [u8], then: F) -> Option<R> where
-    F: FnOnce(&mut [u8], usize) -> (R, WithOpt) {
-    self.peek_front(dst).map(|(src_size_bytes, dst_size_bytes)| {
-      let (res, opt) = then(dst, dst_size_bytes);
-      if let WithOpt::Pop = opt {
-        self.drop_front(src_size_bytes);
-      }
-      res
+  pub fn front<'a>(&'a mut self, dst: &mut [u8]) -> Option<Front<'a, T>> {
+    self.peek_front(dst).map(move |(src_size_bytes, dst_size_bytes)| {
+      Front { bring: self, src_size_bytes, size_bytes: dst_size_bytes }
     })
   }
 

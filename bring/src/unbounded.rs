@@ -141,7 +141,7 @@ mod tests {
     }
 
     #[test]
-    fn with_front() {
+    fn front_with() {
       let mut dst =  [0u8; 5];
 
       let mut ring = super::Bring::from_vec(vec![]);
@@ -151,32 +151,30 @@ mod tests {
       ring.push_back(&[4,5,6,7]);
       ring.push_back(&[8,9,10,11,12]);
 
-      let with_result = ring.with_front(&mut dst, |buf, bytes| {
-        assert_eq!(buf[..bytes], [1,2,3]);
+      let with_result = ring.front(&mut dst).unwrap().with(|bytes| {
+        assert_eq!(dst[..bytes], [1,2,3]);
         // Setting WithOpt::Peek keeps the front-most blob on the ring buffer
         ("any return value", crate::WithOpt::Peek)
       });
-      assert_eq!(with_result.unwrap(), "any return value");
+      assert_eq!(with_result, "any return value");
 
-      ring.with_front(&mut dst, |buf, bytes| {
-        assert_eq!(buf[..bytes], [1,2,3]);
+      ring.front(&mut dst).unwrap().with(|bytes| {
+        assert_eq!(dst[..bytes], [1,2,3]);
         // Setting WithOpt::Pop removes the front-most blob from the ring buffer
         ((), crate::WithOpt::Pop)
       });
 
-      ring.with_front(&mut dst, |buf, bytes| {
-        assert_eq!(buf[..bytes], [4,5,6,7]);
+      ring.front(&mut dst).unwrap().with(|bytes| {
+        assert_eq!(dst[..bytes], [4,5,6,7]);
         ((), crate::WithOpt::Pop)
       });
 
-      ring.with_front(&mut dst, |buf, bytes| {
-        assert_eq!(buf[..bytes], [8,9,10,11,12]);
+      ring.front(&mut dst).unwrap().with(|bytes| {
+        assert_eq!(dst[..bytes], [8,9,10,11,12]);
         ((), crate::WithOpt::Pop)
       });
 
-      let with_result: Option<()> = ring.with_front(&mut dst, |_buf, _bytes| {
-        panic!("Luckily this function is never called if there is nothing to peek/pop")
-      });
+      let with_result = ring.front(&mut dst);
       assert!(with_result.is_none());
       assert_eq!(ring.count(), 0);
     }

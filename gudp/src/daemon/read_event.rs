@@ -8,6 +8,7 @@ use clock::Clock;
 use crate::socket::{Socket, PeerType};
 use crate::state::State;
 use crate::daemon::{self, poll};
+use crate::constants::header;
 
 type TokenEntry<'a> = OccupiedEntry<'a, Token, Socket>;
 pub fn handle<C: Clock>(mut token_entry: TokenEntry, s: &mut daemon::State<C>) {
@@ -44,6 +45,10 @@ pub fn handle<C: Clock>(mut token_entry: TokenEntry, s: &mut daemon::State<C>) {
       },
 
       Ok((size, peer_addr)) => {
+        // Filter out non-conforming protocol bits as socket noise
+        if size < header::SIZE_BYTES { continue; }
+        if s.buf_local[..4] != header::MAGIC_BYTES { continue; }
+
         match socket.peer_type {
           PeerType::Passive { ref mut peers, ref listen, .. } => {
             match (peers.get_mut(&peer_addr), listen) {

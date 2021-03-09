@@ -19,17 +19,17 @@ macro_rules! impl_builder {
       self
     }
 
-    pub fn on_packet_sent(mut self, f: Box<dyn FnMut((SocketAddr, SocketAddr), &[u8], usize) + Send>) -> $builder {
+    pub fn on_packet_sent(mut self, f: Box<dyn FnMut((SocketAddr, SocketAddr), &[u8], u32) + Send>) -> $builder {
       self.conf.on_packet_sent = Some(f);
       self
     }
 
-    pub fn on_packet_acked(mut self, f: Box<dyn FnMut((SocketAddr, SocketAddr), usize) + Send>) -> $builder {
+    pub fn on_packet_acked(mut self, f: Box<dyn FnMut((SocketAddr, SocketAddr), u32) + Send>) -> $builder {
       self.conf.on_packet_acked = Some(f);
       self
     }
 
-    pub fn on_packet_lost(mut self, f: Box<dyn FnMut((SocketAddr, SocketAddr), usize) + Send>) -> $builder {
+    pub fn on_packet_lost(mut self, f: Box<dyn FnMut((SocketAddr, SocketAddr), u32) + Send>) -> $builder {
       self.conf.on_packet_lost = Some(f);
       self
     }

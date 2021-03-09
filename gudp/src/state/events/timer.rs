@@ -21,8 +21,7 @@ impl State {
 
       TimerKind::Heartbeat => {
         let mut buf_write = buf_write.lock().expect("Could not acquire unpoisoned write lock");
-        s.buf_local[..4].copy_from_slice(b"ping");
-        let push_result = buf_write.push_back(&s.buf_local[..4]);
+        let push_result = buf_write.push_back(&[]); // Heartbeat
         drop(buf_write);
 
         match push_result {

@@ -15,7 +15,7 @@ fn main() {
   let socket = std::net::UdpSocket::bind(src_addr).expect("Could not bind");
   socket.set_nonblocking(true).expect("Could not set nonblocking!");
 
-  let service = gudp::Service::initialize().expect("Could not initialize gudp service");
+  let service = gudp::Builder::new().build().expect("Could not initialize gudp service");
   if let Some("-l") = args.next().as_deref() {
     let listener = service.listen(socket).expect("Could not start listener");
     listen(listener, src_port);
