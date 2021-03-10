@@ -1,21 +1,18 @@
-use clock::Clock;
-
-use crate::state::State;
+use crate::state::{State, Deps};
 use crate::timer::TimerKind;
-use crate::daemon;
 use crate::warn;
 
 impl State {
   // Returns true when the connection is updated
   // Returns false when the connection has timed out
-  pub fn timer<C: Clock>(&mut self, kind: TimerKind, s: &mut daemon::State<C>) -> bool {
+  pub fn timer<D: Deps>(&mut self, kind: TimerKind, deps: &mut D) -> bool {
     let (ref buf_read, ref buf_write, ref status) = *self.shared;
     match kind {
       TimerKind::Timeout => {
         let lock = buf_read.lock().expect("Could not acquire unpoisoned read lock");
         status.set_peer_hup();
         lock.notify_all();
-        self.clear_timers(s);
+        self.clear_timers(deps.timers());
         false
       },
 
@@ -25,7 +22,7 @@ impl State {
         drop(buf_write);
 
         match push_result {
-          Some(_size) => s.tx_on_write.send(self.socket_id).unwrap_or_else(warn::tx_to_write_send_failed),
+          Some(_size) => deps.notify_write(self.socket_id),
           None => warn::prepare_heartbeat_failed()
         };
 

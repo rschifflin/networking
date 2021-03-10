@@ -16,25 +16,15 @@ use crate::types::ToDaemon as FromService;
 use crate::timer::{self, Timers, TimerKind};
 use crate::service::Conf;
 
+pub use state::State;
+
 mod poll;
+mod state;
 mod service_event;
 mod timer_event;
 mod read_event;
 mod write_event;
 mod listen_close_event;
-
-// Contains all the state used by the single threaded event loop handlers and state changes
-pub struct State<C: Clock> {
-  pub poll: Poll,
-  pub waker: Arc<Waker>,
-  pub tx_on_write: channel::Sender<socket::Id>,
-  pub tx_on_close: channel::Sender<Token>,
-  pub next_conn_id: usize,
-  pub buf_local: Vec<u8>,
-  pub timers: timer::List<(socket::Id, TimerKind)>,
-  pub conf: Conf,
-  pub clock: C
-}
 
 pub fn spawn<C>(
   poll: Poll,

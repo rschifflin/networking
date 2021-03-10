@@ -2,25 +2,21 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::io;
 
-use log::trace;
-
-use clock::Clock;
-
 use crate::types::FromDaemon as ToService;
 use crate::error;
-use crate::state::{State, FSM};
+use crate::state::{State, FSM, Deps};
 use crate::timer::{Timers, TimerKind};
-use crate::daemon;
 use crate::constants::{header, time_ms};
 
 impl State {
   // Returns true when the connection is updated
   // Returns false when the connection is terminal and can be cleaned up
-  pub fn read<C: Clock>(&mut self, local_addr: SocketAddr, peer_addr: SocketAddr, size: usize, s: &mut daemon::State<C>) -> bool {
-    s.timers.remove((self.socket_id, TimerKind::Timeout), self.last_recv + time_ms::TIMEOUT);
-    let when = s.clock.now();
+  pub fn read<D: Deps>(&mut self, local_addr: SocketAddr, peer_addr: SocketAddr, size: usize, deps: &mut D) -> bool {
+    let when = deps.now();
+    let timers = deps.timers();
+    timers.remove((self.socket_id, TimerKind::Timeout), self.last_recv + time_ms::TIMEOUT);
     self.last_recv = when;
-    s.timers.add((self.socket_id, TimerKind::Timeout), when + time_ms::TIMEOUT);
+    timers.add((self.socket_id, TimerKind::Timeout), when + time_ms::TIMEOUT);
 
     let (ref buf_read, ref buf_write, ref status) = *self.shared;
 
@@ -38,7 +34,7 @@ impl State {
       if buf_write.count() > 0 {
         return true
       } else {
-        self.clear_timers(s);
+        self.clear_timers(deps.timers());
         return false
       }
     }
@@ -64,10 +60,10 @@ impl State {
             // TODO: Do we ack if we can't push back?
             if size > header::SIZE_BYTES {
               // TODO: Warn if fails from src buffer too small or dst buffer full?
-              buf.push_back(&mut s.buf_local[header::SIZE_BYTES..size]).map(|_| {
+              buf.push_back(&mut deps.buffer(header::SIZE_BYTES..size)).map(|_| {
                 buf.notify_one();
               });
-              ack((self.local_addr, peer_addr), s);
+              ack((self.local_addr, peer_addr), deps);
             }
 
             self.fsm = FSM::Connected;
@@ -75,7 +71,7 @@ impl State {
           },
           Err(_) => {
             // NOTE: Setting status and notifying is not necessary- if the send failed there is no app-side connection to observe this or block on it
-            self.clear_timers(s);
+            self.clear_timers(deps.timers());
             false
           }
         }
@@ -85,11 +81,11 @@ impl State {
         // TODO: Do we ack if we can't push back?
         if size > header::SIZE_BYTES {
           // TODO: Warn if fails from src buffer too small or dst buffer full?
-          buf.push_back(&mut s.buf_local[header::SIZE_BYTES..size]).map(|_| {
+          buf.push_back(&mut deps.buffer(header::SIZE_BYTES..size)).map(|_| {
             // TODO: Update acks (and call on_packet_acked when not heartbeat)
             buf.notify_one();
           });
-          ack((self.local_addr, peer_addr), s);
+          ack((self.local_addr, peer_addr), deps);
         }
 
         true
@@ -98,10 +94,8 @@ impl State {
   }
 }
 
-pub fn ack<C: Clock>(addr_pair: (SocketAddr, SocketAddr), s: &mut daemon::State<C>) {
-  if let Some(f) = &mut s.conf.on_packet_acked {
-    let bytes = &s.buf_local[header::REMOTE_SEQ_NO_RANGE];
-    let ack = u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
-    f(addr_pair, ack);
-  }
+pub fn ack<D: Deps>(addr_pair: (SocketAddr, SocketAddr), deps: &mut D) {
+  let bytes = deps.buffer(header::REMOTE_SEQ_NO_RANGE);
+  let ack = u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+  deps.on_packet_acked(addr_pair, ack);
 }

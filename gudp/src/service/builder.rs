@@ -1,7 +1,7 @@
 use std::io;
 use std::net::SocketAddr;
 
-use clock::{Clock, SystemClock};
+use clock::Clock;
 
 use super::{Conf, Service};
 

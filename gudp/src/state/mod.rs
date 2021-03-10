@@ -6,11 +6,13 @@ use crate::socket::{self, ConnOpts};
 
 pub use status::Status;
 pub use shared::Shared;
+pub use deps::Deps;
 
 mod shared;
 mod status;
 mod events;
 mod util;
+mod deps;
 
 /// Connection state
 /// Tracks all the behavior of a given connection
