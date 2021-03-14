@@ -7,7 +7,9 @@ use crate::socket::{self, ConnOpts};
 pub use status::Status;
 pub use shared::Shared;
 pub use deps::Deps;
+use sequence::{Sequence, SentSeqNo};
 
+mod sequence;
 mod shared;
 mod status;
 mod events;
@@ -22,8 +24,7 @@ pub struct State {
   pub socket_id: socket::Id,
   pub last_recv: Instant,
   pub last_send: Instant,
-
-  // TODO: sent_buffer of sequenceNo => (acked? acktime?)
+  pub sequence: Sequence,
   pub fsm: FSM
 }
 

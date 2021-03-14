@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use crate::constants::time_ms;
 use crate::timer::{self, Timers, TimerKind};
 use crate::state::{State, Deps};
@@ -16,4 +18,16 @@ impl State {
     status.set_io_err(errno);
     lock.notify_all();
   }
+}
+
+pub fn bump_timeout(socket_id: socket::Id, last_recv: &mut Instant, when: Instant, timers: &mut timer::List<(socket::Id, TimerKind)>) {
+  timers.remove((socket_id, TimerKind::Timeout), *last_recv + time_ms::TIMEOUT);
+  *last_recv = when;
+  timers.add((socket_id, TimerKind::Timeout), when + time_ms::TIMEOUT);
+}
+
+pub fn bump_heartbeat(socket_id: socket::Id, last_send: &mut Instant, when: Instant, timers: &mut timer::List<(socket::Id, TimerKind)>) {
+  timers.remove((socket_id, TimerKind::Heartbeat), *last_send + time_ms::HEARTBEAT);
+  *last_send = when;
+  timers.add((socket_id, TimerKind::Heartbeat), when + time_ms::HEARTBEAT);
 }

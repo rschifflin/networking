@@ -8,9 +8,9 @@ use bring::bounded::Bring;
 use cond_mutex::CondMutex;
 
 use crate::timer::{Timers, TimerKind};
-use crate::state::{State, Deps};
+use crate::state::{State, Deps, SentSeqNo, util};
 use crate::types::READ_BUFFER_TAG;
-use crate::constants::{header, time_ms};
+use crate::constants::{header, time_ms, SENT_SEQ_BUF_SIZE};
 
 fn terminal<D: Deps>(state: &State, buf_read: &CondMutex<Bring, READ_BUFFER_TAG>, deps: &mut D) -> io::Result<bool> {
   let lock = buf_read.lock().expect("Could not acquire unpoisoned read lock");
@@ -42,16 +42,15 @@ impl State {
 
       let buf = &mut *buf_write;
 
-      // TODO: Prefix buf_local with header, seq no, etc
+      // TODO: Add CRC?
       // NOTE: buf_local MUST be large enough to hold the packet header
       deps.buffer_mut(header::MAGIC_BYTES_RANGE).copy_from_slice(&header::MAGIC_BYTES);
-      deps.buffer_mut(header::LOCAL_SEQ_NO_RANGE).copy_from_slice(&[0,0,0,0]);
-      deps.buffer_mut(header::REMOTE_SEQ_NO_RANGE).copy_from_slice(&[0,0,0,0]);
-      deps.buffer_mut(header::REMOTE_SEQ_TAIL_RANGE).copy_from_slice(&[0,0,0,0]);
+      deps.buffer_mut(header::LOCAL_SEQ_NO_RANGE).copy_from_slice(&self.sequence.local_seq_no.to_be_bytes());
+      deps.buffer_mut(header::REMOTE_SEQ_NO_RANGE).copy_from_slice(&self.sequence.remote_seq_no.to_be_bytes());
+      deps.buffer_mut(header::REMOTE_SEQ_TAIL_RANGE).copy_from_slice(&self.sequence.remote_seq_tail.to_be_bytes());
 
       // This attempts to peek+send the front blob of the write buffer
       match buf.front(deps.buffer_mut(header::SIZE_BYTES..)).map(|mut front| {
-        // TODO: Is it better to provide a &mut WithOpt arg to modify, or to return a tuple of (R, WithOpt) like now?
         front.with(|payload_size_bytes| {
           let send = io.send_to(deps.buffer(..header::SIZE_BYTES + payload_size_bytes), peer_addr);
           let opt = match send { Ok(_) => WithOpt::Pop, Err(_) => WithOpt::Peek };
@@ -60,17 +59,23 @@ impl State {
       }) {
         /* Write OK */
         Some(Ok(total_size_bytes)) => {
+          let when = deps.now();
+          let sent_seq_no = self.sequence.local_seq_no;
+          let sent_idx = sent_seq_no as usize % SENT_SEQ_BUF_SIZE;
+
+          // Only notify for contentful packets
           if total_size_bytes > header::SIZE_BYTES {
-            let bytes = deps.buffer(header::LOCAL_SEQ_NO_RANGE);
-            let sent_seq_no = u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
             deps.on_packet_sent((self.local_addr, peer_addr), header::SIZE_BYTES..total_size_bytes, sent_seq_no);
+            self.sequence.sent_seq_buf[sent_idx] = Some(SentSeqNo::new(sent_seq_no, when));
+          } else {
+            // Erase the 'old' buffer entry for rare cases of high packet loss leading to unintentional acks
+            self.sequence.sent_seq_buf[sent_idx] = None;
           }
 
-          let when = deps.now();
-          let timers = deps.timers();
-          timers.remove((self.socket_id, TimerKind::Heartbeat), self.last_send + time_ms::HEARTBEAT);
-          self.last_send = when;
-          timers.add((self.socket_id, TimerKind::Heartbeat), when + time_ms::HEARTBEAT);
+          util::bump_heartbeat(self.socket_id, &mut self.last_send, when, deps.timers());
+
+          // Bump to the next unsent sequence number
+          self.sequence.local_seq_no = self.sequence.local_seq_no.wrapping_add(1);
         }
 
         /* Could not peek at the front of the write buffer */

@@ -1,7 +1,7 @@
 use std::net::SocketAddr;
 
 use crate::socket::{self, ConnOpts};
-use crate::state::{State, FSM, Deps, shared};
+use crate::state::{State, FSM, Deps, Sequence, shared};
 use crate::timer::{Timers, TimerKind};
 use crate::constants::time_ms;
 
@@ -19,7 +19,7 @@ impl State {
       shared: shared::new(),
       local_addr,
       socket_id,
-
+      sequence: Sequence::new(), // TODO: Use deps.rand() to randomize seq no
       last_recv: when,
       last_send: when,
       fsm: FSM::Handshaking { conn_opts }
