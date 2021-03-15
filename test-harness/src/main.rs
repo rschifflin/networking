@@ -28,7 +28,7 @@ fn main() {
     .expect("Could not initialize gudp service");
 
   let listener = service.listen(socket).expect("Could not start listener");
-  std::thread::spawn(move || listen(listener, listen_port));
+  std::thread::spawn(move || listen(listener));
 
   let socket = std::net::UdpSocket::bind(peer_addr).expect("Could not bind");
   socket.set_nonblocking(true).expect("Could not set nonblocking!");
@@ -37,7 +37,7 @@ fn main() {
   gui::gui_loop(gui_args);
 }
 
-fn listen(listener: gudp::Listener, src_port: u16) {
+fn listen(listener: gudp::Listener) {
   loop {
     let conn = listener.accept().expect("Could not accept connection on listener");
     std::thread::spawn(move || { on_accept(conn) });
@@ -45,8 +45,6 @@ fn listen(listener: gudp::Listener, src_port: u16) {
 }
 
 fn on_accept(conn: gudp::Connection) -> std::io::Result<()> {
-  let src_port = conn.local_addr().port();
-  let dst_port = conn.peer_addr().port();
   let mut buf = [0u8; 1000];
   loop {
     let recv_len = conn.recv(&mut buf)?;

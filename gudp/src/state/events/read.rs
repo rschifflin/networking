@@ -2,14 +2,10 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::io;
 
-use bring::bounded::Bring;
-use cond_mutex::CondMutexGuard;
-
 use crate::types::FromDaemon as ToService;
 use crate::error;
 use crate::state::{sequence, util, State, FSM, Sequence, Deps};
-use crate::timer::{Timers, TimerKind};
-use crate::constants::{header, time_ms};
+use crate::constants::header;
 
 impl State {
   // Returns false when the connection is terminal and can be cleaned up

@@ -4,13 +4,11 @@ use std::io;
 use mio::net::UdpSocket as MioUdpSocket;
 use bring::WithOpt;
 use bring::bounded::Bring;
-
 use cond_mutex::CondMutex;
 
-use crate::timer::{Timers, TimerKind};
 use crate::state::{State, Deps, SentSeqNo, util};
 use crate::types::READ_BUFFER_TAG;
-use crate::constants::{header, time_ms, SENT_SEQ_BUF_SIZE};
+use crate::constants::{header, SENT_SEQ_BUF_SIZE};
 
 fn terminal<D: Deps>(state: &State, buf_read: &CondMutex<Bring, READ_BUFFER_TAG>, deps: &mut D) -> io::Result<bool> {
   let lock = buf_read.lock().expect("Could not acquire unpoisoned read lock");

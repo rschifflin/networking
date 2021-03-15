@@ -1,12 +1,11 @@
 use std::borrow::Cow;
-use std::fmt::Write;
 
 use imgui::{im_str, ImString, ListBox};
 use crate::gui::io::input::fields::Current;
 use crate::gui::state::State;
 
 fn sanitize_u32(numstring: &mut ImString) {
-  let mut s = numstring.to_string();
+  let s = numstring.to_string();
   match i64::from_str_radix(&s, 10) {
     Ok(n) => {
       if (n >= 0) && (n <= u32::MAX as i64) { return }
@@ -22,7 +21,7 @@ fn sanitize_u32(numstring: &mut ImString) {
 }
 
 fn sanitize_hexstring(hexstring: &mut ImString, bytes: usize) {
-  let mut s = hexstring.to_string();
+  let s = hexstring.to_string();
   hexstring.clear();
   for c in s.chars().chain(std::iter::repeat('0')).take(bytes) {
     hexstring.push(c);
@@ -30,7 +29,7 @@ fn sanitize_hexstring(hexstring: &mut ImString, bytes: usize) {
 }
 
 fn sanitize_bitstring(bitstring: &mut ImString, bits: usize) {
-  let mut s = bitstring.to_string();
+  let s = bitstring.to_string();
   bitstring.clear();
 
   s.chars()
@@ -146,7 +145,6 @@ pub fn populate_frame<'a>(ui: &imgui::Ui, state: &mut State) {
             state.actions.select_received = ListBox::new(im_str!("receivedlist"))
               .build_simple(ui, &mut state.fields.received.list_idx, state.fields.received.list.as_slice(), &|s: &ImString| Cow::Borrowed(s.as_ref()));
 
-            let data = &state.received[state.received.len() - state.fields.received.list_idx - 1].1;
             display_selected(ui, &state.fields.received.current);
           }
         });

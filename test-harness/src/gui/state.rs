@@ -7,6 +7,8 @@ use clock::Clock;
 use crate::gui::io::{input, output};
 use crate::gui::Args;
 
+pub const WRITE_FAILED: &'static str = "Could not write formatted string";
+
 pub struct State {
   t_zero: Instant,
   pub sent: Vec<(Duration, Vec<u8>)>,
@@ -51,9 +53,10 @@ impl State {
       let send = (args.clock.now() - self.t_zero, self.to_send.clone());
 
       let mut fmt_string = String::new();
-      write!(&mut fmt_string, "{:04}: {:?} - ", self.fields.sent.list.len() + 1, send.0);
+      write!(&mut fmt_string, "{:04}: {:?} - ", self.fields.sent.list.len() + 1, send.0)
+        .expect(WRITE_FAILED);
       for byte in send.1.iter() {
-        write!(&mut fmt_string, "{:02x} ", byte);
+        write!(&mut fmt_string, "{:02x} ", byte).expect(WRITE_FAILED);
       }
       self.fields.sent.list.insert(0, ImString::new(&fmt_string));
       self.sent.push(send);
@@ -84,9 +87,10 @@ impl State {
           self.received.push((now - self.t_zero, buf[..size].to_vec()));
 
           let mut fmt_string = String::new();
-          write!(&mut fmt_string, "{:04}: {:?} - ", self.fields.received.list.len(), now - self.t_zero);
+          write!(&mut fmt_string, "{:04}: {:?} - ", self.fields.received.list.len(), now - self.t_zero)
+            .expect(WRITE_FAILED);
           for byte in buf[..size].iter() {
-            write!(&mut fmt_string, "{:02x} ", byte);
+            write!(&mut fmt_string, "{:02x} ", byte).expect(WRITE_FAILED);
           }
           self.fields.received.list.insert(0, ImString::new(&fmt_string));
           self.update_select_received();
@@ -135,7 +139,8 @@ impl State {
 
     self.fields.home.send_hexstring.clear();
     for byte in self.to_send.iter() {
-      write!(&mut self.fields.home.send_hexstring, "{:02x} ", byte);
+      write!(&mut self.fields.home.send_hexstring, "{:02x} ", byte)
+        .expect(WRITE_FAILED);
     }
   }
 
@@ -156,28 +161,28 @@ fn update_current(elapsed: Duration, selected: &[u8], current: &mut input::field
   let mut bytes = [0u8; 4];
   let elapsed_string = &mut current.elapsed_string;
   elapsed_string.clear();
-  write!(elapsed_string, "{:?} since start", elapsed);
+  write!(elapsed_string, "{:?} since start", elapsed).expect(WRITE_FAILED);
 
   let magic_bytes = &mut current.magic_bytes_hexstring;
   magic_bytes.clear();
   for byte in &selected[0..4] {
-    write!(magic_bytes, "{:02x} ", byte);
+    write!(magic_bytes, "{:02x} ", byte).expect(WRITE_FAILED);
   }
 
   let local_seq_no = &mut current.local_sequence_no_numstring;
   local_seq_no.clear();
   bytes.copy_from_slice(&selected[4..8]);
-  write!(local_seq_no, "{}", u32::from_be_bytes(bytes));
+  write!(local_seq_no, "{}", u32::from_be_bytes(bytes)).expect(WRITE_FAILED);
 
   let remote_seq_no = &mut current.remote_sequence_no_numstring;
   remote_seq_no.clear();
   bytes.copy_from_slice(&selected[4..8]);
-  write!(remote_seq_no, "{}", u32::from_be_bytes(bytes));
+  write!(remote_seq_no, "{}", u32::from_be_bytes(bytes)).expect(WRITE_FAILED);
 
   let remote_seq_tail = &mut current.remote_sequence_tail_bitstring;
   remote_seq_tail.clear();
   for byte in &selected[12..16] {
-    write!(remote_seq_tail, "{:08b} ", byte);
+    write!(remote_seq_tail, "{:08b} ", byte).expect(WRITE_FAILED);
   }
 
   let payload = &mut current.payload_string;
@@ -192,7 +197,7 @@ fn update_current(elapsed: Duration, selected: &[u8], current: &mut input::field
   }).unwrap_or_else(|_| {
     payload.push_str("(Non-utf8) ");
     for byte in &selected[16..] {
-      write!(payload, "{:02x} ", byte);
+      write!(payload, "{:02x} ", byte).expect(WRITE_FAILED);
     }
   });
 }
