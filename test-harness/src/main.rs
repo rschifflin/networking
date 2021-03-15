@@ -14,7 +14,6 @@ fn main() {
   let socket = std::net::UdpSocket::bind(&listen_addr).expect("Could not bind");
   socket.set_nonblocking(true).expect("Could not set nonblocking!");
 
-
   let tclock = test_clock::TestClock::new(std::time::Instant::now());
 
   let service = gudp::Builder::new()
