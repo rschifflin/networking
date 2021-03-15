@@ -1,7 +1,6 @@
 use std::time::Instant;
 
 use crate::constants::SENT_SEQ_BUF_SIZE;
-
 pub type SeqNo = u32;
 
 #[derive(Clone)]
@@ -40,7 +39,7 @@ impl Sequence {
         tail |= 1;
         self.remote_seq_tail = tail << (seq_gap - 1);
       },
-      gte_32 => self.remote_seq_tail = 0
+      _else_gte_32 => self.remote_seq_tail = 0
     }
 
     self.remote_seq_no = seq_no;
@@ -133,5 +132,208 @@ pub fn distance(start: SeqNo, end: SeqNo) -> Option<usize> {
     None
   } else {
     Some(offset_end as usize)
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::{Sequence, SentSeqNo, distance};
+
+  #[test]
+  fn test_distances() {
+    // Identical sequence numbers have no distance between them
+    assert_eq!(distance(0, 0), None);
+    assert_eq!(distance(u32::MAX, u32::MAX), None);
+    assert_eq!(distance(u32::MAX/2 + 7, u32::MAX/2 + 7), None);
+    assert_eq!(distance(u32::MAX/2 - 55, u32::MAX/2 - 55), None);
+
+    // With numbers whose difference is <= u32::MAX/2 + 1...
+    // If the start sequence number is greater, the distance is None as it would be negative
+    assert_eq!(distance(1, 0), None);
+    assert_eq!(distance(9999, 495), None);
+    assert_eq!(distance(u32::MAX, u32::MAX/2), None);
+    // If the start sequence number is smaller, the distance is the difference
+    assert_eq!(distance(0, 1), Some(1));
+    assert_eq!(distance(700, 4981), Some(4281));
+    assert_eq!(distance(u32::MAX/2 + 1, u32::MAX), Some((u32::MAX/2) as usize));
+
+    // With numbers whose difference is > u32::MAX/2 + 1...
+    // If the start sequence number is much greater, the distance wraps around and is positive
+    assert_eq!(distance(u32::MAX/2 + 2, 0), Some((u32::MAX/2) as usize));
+    assert_eq!(distance(u32::MAX - 9999, 495), Some(10495));
+    assert_eq!(distance(u32::MAX, u32::MAX/4), Some(1073741824));
+    // If the start sequence number is much smaller, the distance wraps around and is negative (aka None)
+    assert_eq!(distance(0, u32::MAX/2 + 1), None);
+    assert_eq!(distance(700, 40_00_000_981), None);
+    assert_eq!(distance(u32::MAX/2, u32::MAX), None);
+  }
+
+  mod update_remote {
+    use super::Sequence;
+
+    // Expect zero-gap to no-op
+    #[test]
+    fn test_zero_gap() {
+      let mut seq = Sequence::new();
+      seq.update_remote(1234, 0);
+      assert_eq!(seq.remote_seq_no, 0);
+      assert_eq!(seq.remote_seq_tail, 0);
+    }
+
+    #[test]
+    // Gap larger than 31 erases the remote tail
+    fn test_large_gap() {
+      let mut seq = Sequence::new();
+      seq.update_remote(1234, 32);
+      assert_eq!(seq.remote_seq_no, 1234);
+      assert_eq!(seq.remote_seq_tail, 0);
+    }
+
+    #[test]
+    // Gap between 31 shifts the tail by gap amount
+    fn test_gap() {
+      let mut seq = Sequence::new();
+      for n in 1..=31 {
+        // Testing with a full tail
+        seq.remote_seq_no = 0;
+        seq.remote_seq_tail = u32::MAX;
+        seq.update_remote(n, n as usize);
+
+        // Note the first bit after the first shift becomes a 1 (to account for the prev remote sequence no.)
+        // Therefore the bitfield appears to only shift (n - 1) spaces
+        assert_eq!(seq.remote_seq_no, n);
+        assert_eq!(seq.remote_seq_tail, u32::MAX << (n-1));
+
+        // Testing with an empty tail
+        seq.remote_seq_no = 0;
+        seq.remote_seq_tail = 0;
+        seq.update_remote(n, n as usize);
+
+        // Note the first bit after the first shift becomes a 1 (to account for the prev remote sequence no.)
+        // Therefore the bitfield appears to only shift (n - 1) spaces
+        assert_eq!(seq.remote_seq_no, n);
+        assert_eq!(seq.remote_seq_tail, 1 << (n-1));
+      }
+    }
+  }
+
+  mod iter_acks {
+    use super::{Sequence, SentSeqNo};
+    use crate::constants::SENT_SEQ_BUF_SIZE;
+
+    #[test]
+    // With nothing in the sent buf, nothing gets acked
+    fn empty_sent_buf() {
+      let mut seq = Sequence::new();
+      // Attempt to ack [0-32] sends
+      assert_eq!(seq.iter_acks(32, u32::MAX).count(), 0);
+    }
+
+    #[test]
+    fn already_acked_sent_buf() {
+      let mut seq = Sequence::new();
+      for n in 0..=32 {
+        seq.sent_seq_buf[n] = Some(SentSeqNo { seq_no: n as u32, acked: true, when: std::time::Instant::now() });
+      }
+
+      // Attempt to ack [0-32] sends
+      assert_eq!(seq.iter_acks(32, u32::MAX).count(), 0);
+    }
+
+    #[test]
+    fn fully_unacked_sent_buf() {
+      let mut seq = Sequence::new();
+      for n in 0..=32 {
+        seq.sent_seq_buf[n] = Some(SentSeqNo::new(n as u32, std::time::Instant::now()));
+      }
+
+      // Attempt to ack 33 (0..=32) sends
+      assert_eq!(seq.iter_acks(32, u32::MAX).count(), 33);
+
+      // Iterating acks them, so future calls don't re-ack
+      assert_eq!(seq.iter_acks(32, u32::MAX).count(), 0);
+    }
+
+    #[test]
+    fn partial_ack_sent_buf() {
+      let mut seq = Sequence::new();
+      for n in 0..=32 {
+        if n % 2 == 0 {
+          seq.sent_seq_buf[n] = Some(SentSeqNo::new(n as u32, std::time::Instant::now()));
+        }
+      }
+
+      // Attempt to ack 16 (0..=15) sends
+      // Only the evens qualify, for a total of 8 acks
+      assert_eq!(seq.iter_acks(15, 2u32.pow(16) - 1).count(), 8);
+
+      // Iterating acks them, so future calls don't re-ack
+      assert_eq!(seq.iter_acks(15, 2u32.pow(16) - 1).count(), 0);
+    }
+
+    #[test]
+    fn wrapping_partial_ack_sent_buf() {
+      let mut seq = Sequence::new();
+      for n in (SENT_SEQ_BUF_SIZE-16)..=(SENT_SEQ_BUF_SIZE+16) {
+        if n % 2 == 0 {
+          seq.sent_seq_buf[n % SENT_SEQ_BUF_SIZE] = Some(SentSeqNo::new(n as u32, std::time::Instant::now()));
+        }
+      }
+
+      // Attempt to ack 24 sends
+      // Only the evens qualify, for a total of 12 acks
+      assert_eq!(seq.iter_acks((SENT_SEQ_BUF_SIZE + 15) as u32, 2u32.pow(24) - 1).count(), 12);
+
+      // Iterating acks them, so future calls don't re-ack
+      assert_eq!(seq.iter_acks(1032, 2u32.pow(16) - 1).count(), 0);
+    }
+
+    #[test]
+    // Some entries in the buf may be stale. We do not ack them even if ackable
+    fn wrapping_stale_partial_ack_sent_buf() {
+      let mut seq = Sequence::new();
+
+      // Stale seq #s 0-32
+      for n in 0..=32 {
+        seq.sent_seq_buf[n % SENT_SEQ_BUF_SIZE] = Some(SentSeqNo::new(n as u32, std::time::Instant::now()));
+      }
+
+      // Fresh seq #s 1024-1056, evens only
+      for n in SENT_SEQ_BUF_SIZE..=(SENT_SEQ_BUF_SIZE+32) {
+        if n % 2 == 0 {
+          seq.sent_seq_buf[n % SENT_SEQ_BUF_SIZE] = Some(SentSeqNo::new(n as u32, std::time::Instant::now()));
+        }
+      }
+
+      // Attempt to ack 16 sends
+      // Only the evens qualify, for a total of 8 acks
+      assert_eq!(seq.iter_acks((SENT_SEQ_BUF_SIZE + 15) as u32, 2u32.pow(16) - 1).count(), 8);
+
+      // Note, the half of the old entries that didn't get overwritten still exist
+      assert_eq!(seq.iter_acks(32, u32::MAX).count(), 16);
+    }
+
+    #[test]
+    // Iteration order is oldest to newest
+    fn iteration_order() {
+      let mut seq = Sequence::new();
+
+      for n in u32::MAX - 15..=u32::MAX {
+        seq.sent_seq_buf[n as usize % SENT_SEQ_BUF_SIZE] = Some(SentSeqNo::new(n as u32, std::time::Instant::now()));
+      }
+      for n in 0..=16 {
+        seq.sent_seq_buf[n % SENT_SEQ_BUF_SIZE] = Some(SentSeqNo::new(n as u32, std::time::Instant::now()));
+      }
+
+      // Attempt to ack all sends
+      let acks: Vec<u32> = seq.iter_acks(16, u32::MAX).collect();
+      assert_eq!(acks, vec![
+        4294967280, 4294967281, 4294967282, 4294967283, 4294967284, 4294967285, 4294967286, 4294967287,
+        4294967288, 4294967289, 4294967290, 4294967291, 4294967292, 4294967293, 4294967294, 4294967295,
+        0         , 1         , 2         , 3         , 4         , 5         , 6         , 7         ,
+        8         , 9         , 10        , 11        , 12        , 13        , 14        , 15        ,
+        16
+      ]);
+    }
   }
 }
