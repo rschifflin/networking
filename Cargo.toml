@@ -4,6 +4,8 @@ members = [
   "toys/gudp-client",
   "toys/gudp-chaingun",
   "toys/gudp-echo",
+  "toys/send-shakespeare",
+  "toys/recv-shakespeare",
   "test-harness",
   "gudp",
   "slice-pair",

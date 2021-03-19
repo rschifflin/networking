@@ -15,3 +15,6 @@ mio = {version = "0.7.7", features = ["net", "os-poll"] }
 crossbeam = "0.8.0"
 byteorder = "1"
 log = "0.4.14"
+
+[dev-dependencies]
+socket2 = "0.4.0"
