@@ -42,22 +42,7 @@ impl Connection {
       netstat_out.loss.load(OSeqCst)
     }
 
-    // TODO: Put the writer behind a condvar mutex to allow blocking writes
-    // Return None if the buffer exceeds 128 packets
-    pub fn try_send(&self, buf: &[u8]) -> Option<io::Result<usize>> {
-      let (ref _buf_read, ref buf_write, ref status, _) = *self.shared;
-      status.check_err().map(|m| Some(m)).transpose()?;
-
-      let mut buf_write = match buf_write.lock() {
-        Ok(inner) => if inner.count() > 128 { return None } else { inner },
-        Err(e) => return Some(Err(error::poisoned_write_lock(e)))
-      };
-
-      let size = buf_write.push_back(buf);
-      drop(buf_write);
-      Some((self.on_write)(size)) // Wake on send to flush all writes immediately
-    }
-
+    // TODO: Add TrySend with a condvar + mutex around the write buffer and a buffer size limit
     pub fn send(&self, buf: &[u8]) -> io::Result<usize> {
       let (ref _buf_read, ref buf_write, ref status, _) = *self.shared;
       status.check_err()?;

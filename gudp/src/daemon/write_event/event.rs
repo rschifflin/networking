@@ -43,7 +43,7 @@ pub fn handle<C: Clock>(mut token_entry: TokenEntry, pending_write_keybuf: &mut 
                 // SOMEDAY: Convey more error info to app side. Maybe set remote drop flags based on errorkind?
                 let errno = e.raw_os_error();
                 for (_addr, peer_state) in peers.iter() {
-                  peer_state.on_io_error(errno, s);
+                  peer_state.on_io_error(errno);
                 }
 
                 trace!("OnWriteable: IO encountered error, dropping all peers. Caused by {}", peer_addr);
@@ -64,7 +64,7 @@ pub fn handle<C: Clock>(mut token_entry: TokenEntry, pending_write_keybuf: &mut 
           if e.kind() != std::io::ErrorKind::WouldBlock {
             // SOMEDAY: Convey more error info to app side. Maybe set remote drop flags based on errorkind?
             let errno = e.raw_os_error();
-            state.on_io_error(errno, s);
+            state.on_io_error(errno);
             poll::deregister_io(&mut socket.io, s);
             token_entry.remove();
           }

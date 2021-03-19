@@ -1,12 +1,10 @@
 use std::time::Instant;
 
-use log::trace;
-
 use crate::constants::SENT_SEQ_BUF_SIZE;
 pub type SeqNo = u32;
 
 const MAX_MINUS_31: u32 = u32::MAX - 31;
-const MAX_MINUS_32: u32 = u32::MAX - 31;
+const MAX_MINUS_32: u32 = u32::MAX - 32;
 const HALF_MAX_PLUS_1: u32 = u32::MAX/2 + 1;
 
 #[derive(Copy, Clone)]
@@ -60,7 +58,7 @@ impl Sequence {
       let expected_seq_no = edge.wrapping_add(idx);
       let sent_idx = expected_seq_no as usize % SENT_SEQ_BUF_SIZE;
 
-      if let Some(mut ssn) = self.sent_seq_buf[sent_idx] {
+      if let Some(ssn) = self.sent_seq_buf[sent_idx] {
         if ssn.seq_no == expected_seq_no && !ssn.acked {
           unacked += 1;
           self.sent_seq_buf[sent_idx] = None;
@@ -162,8 +160,6 @@ pub enum Distance {
 // NOTE: As sequence numbers wrap around, the end magnitude may be less than the start,
 // but the distance remains positive. Distance is relative to the start, up to u32::max/2 ahead.
 pub fn distance(start: SeqNo, end: SeqNo) -> Distance {
-  let redundant_min = u32::MAX - 31;
-  let old_min = u32::MAX/2;
   match end.wrapping_sub(start) {
     0 => Distance::Redundant,
     MAX_MINUS_31..=u32::MAX => Distance::Redundant,

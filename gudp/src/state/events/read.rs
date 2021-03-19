@@ -5,7 +5,7 @@ use std::io;
 
 use crate::types::FromDaemon as ToService;
 use crate::error;
-use crate::state::{sequence, util, State, FSM, Sequence, Deps};
+use crate::state::{sequence, State, FSM, Sequence, Deps};
 use crate::constants::header;
 
 impl State {

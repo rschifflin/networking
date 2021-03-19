@@ -1,13 +1,12 @@
 use crate::state::{State, Deps};
 use crate::constants::time_ms;
 use crate::timer::{Timers, TimerKind};
-use crate::warn;
 
 impl State {
   // Returns true when the connection is updated
   // Returns false when the connection has timed out
   pub fn timer<D: Deps>(&mut self, kind: TimerKind, deps: &mut D) -> bool {
-    let (ref buf_read, ref buf_write, ref status, _) = *self.shared;
+    let (ref buf_read, _, ref status, _) = *self.shared;
     match kind {
       TimerKind::Timeout => {
         let when = deps.now();

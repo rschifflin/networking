@@ -1,6 +1,8 @@
 use std::sync::atomic::AtomicU32;
 use std::time::Duration;
 
+const RTT_SMOOTHING_FACTOR: f32 = 0.25;
+
 pub struct Shared {
   pub rtt: AtomicU32,
   pub loss: AtomicU32
@@ -20,8 +22,6 @@ impl NetStat {
   }
 }
 
-const SMOOTHING_FACTOR: f32 = 0.25;
-
 /// Round-trip time- exponentially weighted moving average
 pub struct Rtt {
   prediction: f32
@@ -36,7 +36,7 @@ impl Rtt {
 
   pub fn measure(&mut self, rtt: Duration) -> u32 {
     self.prediction =
-      self.prediction + 0.25 * ((rtt.as_millis() as f32) - self.prediction);
+      self.prediction + RTT_SMOOTHING_FACTOR * ((rtt.as_millis() as f32) - self.prediction);
 
     self.prediction.max(0.0).floor() as u32
   }

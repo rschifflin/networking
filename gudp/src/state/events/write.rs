@@ -7,11 +7,11 @@ use bring::WithOpt;
 use bring::Bring;
 use cond_mutex::CondMutex;
 
-use crate::state::{State, Deps, SentSeqNo, util};
+use crate::state::{State, Deps, SentSeqNo};
 use crate::types::READ_BUFFER_TAG;
 use crate::constants::{header, time_ms, SENT_SEQ_BUF_SIZE};
 
-fn terminal<D: Deps>(state: &State, buf_read: &CondMutex<Bring, READ_BUFFER_TAG>, deps: &mut D) -> io::Result<bool> {
+fn terminal(buf_read: &CondMutex<Bring, READ_BUFFER_TAG>) -> io::Result<bool> {
   let lock = buf_read.lock().expect("Could not acquire unpoisoned read lock");
   lock.notify_all();
   Ok(false)
@@ -39,7 +39,7 @@ impl State {
         }
 
         // Called with buf_write locked, to prevent a "write then hangup" race
-        if status.app_has_hup() { return terminal(self, buf_read, deps); }
+        if status.app_has_hup() { return terminal(buf_read); }
         return Ok(true);
       }
 

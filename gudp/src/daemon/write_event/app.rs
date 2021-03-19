@@ -44,7 +44,7 @@ pub fn handle<C: Clock>(mut token_entry: TokenEntry, peer_addr: SocketAddr, s: &
               } else {
                 let errno = e.raw_os_error();
                 for (_addr, peer_state) in peers.iter() {
-                  peer_state.on_io_error(errno, s);
+                  peer_state.on_io_error(errno);
                 }
                   trace!("App Write: IO encountered error, dropping all peers. Caused by {}", peer_addr);
                 poll::deregister_io(&mut socket.io, s);
@@ -66,7 +66,7 @@ pub fn handle<C: Clock>(mut token_entry: TokenEntry, peer_addr: SocketAddr, s: &
         Err(e) => {
           if e.kind() != std::io::ErrorKind::WouldBlock {
             let errno = e.raw_os_error();
-            state.on_io_error(errno, s);
+            state.on_io_error(errno);
             poll::deregister_io(&mut socket.io, s);
             token_entry.remove();
           }

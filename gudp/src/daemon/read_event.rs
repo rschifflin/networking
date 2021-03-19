@@ -31,10 +31,10 @@ pub fn handle<C: Clock>(mut token_entry: TokenEntry, s: &mut daemon::State<C>) {
 
           // Iterate thru all peers, signalling io error then removing them
           match socket.peer_type {
-            PeerType::Direct(_, ref mut state) => state.on_io_error(errno, s),
+            PeerType::Direct(_, ref mut state) => state.on_io_error(errno),
             PeerType::Passive { ref mut peers, .. } => {
               for (_addr, peer_state) in peers.iter() {
-                peer_state.on_io_error(errno, s);
+                peer_state.on_io_error(errno);
               }
             },
           };

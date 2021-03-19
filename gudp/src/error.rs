@@ -14,10 +14,6 @@ pub fn wake_failed(reason: io::Error) -> io::Error {
   io::Error::new(io::ErrorKind::Other, reason)
 }
 
-pub fn no_space_to_write() -> io::Error {
-  io::Error::new(io::ErrorKind::WriteZero, "Not enough space to write entire packet")
-}
-
 pub fn no_space_to_read() -> io::Error {
   io::Error::new(io::ErrorKind::UnexpectedEof, "Not enough space to read entire packet")
 }
