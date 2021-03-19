@@ -39,8 +39,8 @@ impl State {
           Ok(_) => {
             /* Initial response handling */
             // This was relevant socket activity, so bump the timeout
-            // TODO: Timeout pass
-            util::bump_timeout(self.socket_id, &mut self.last_recv, deps.now(), deps.timers());
+            let when = deps.now();
+            self.last_recv = when;
             let mut bytes: [u8; 4] = [0,0,0,0];
 
             // This was the peer's very first relevant socket activity
@@ -56,9 +56,8 @@ impl State {
               drop(buf);
             }
 
-            let now = deps.now();
             for ack in handle_acks(&mut bytes, &mut self.sequence, deps) {
-              netstat_out.rtt.store(self.netstat.rtt.measure(now - ack.when), OSeqCst);
+              netstat_out.rtt.store(self.netstat.rtt.measure(when - ack.when), OSeqCst);
               deps.on_packet_acked(addr_pair, ack.seq_no);
             }
 
@@ -67,7 +66,6 @@ impl State {
           },
           Err(_) => {
             // NOTE: Setting status and notifying is not necessary- if the send failed there is no app-side connection to observe this or block on it
-            self.clear_timers(deps.timers());
             false
           }
         }
@@ -86,8 +84,8 @@ impl State {
           sequence::Distance::New(n) => Some(n) // Keep and ack
         };
 
-        // TODO: Timer pass
-        util::bump_timeout(self.socket_id, &mut self.last_recv, deps.now(), deps.timers());
+        let when = deps.now();
+        self.last_recv = when;
 
         // The connection only sets app_has_hup on drop, which can only occur
         // when all clones have been dropped (they are simply behind an arc).
@@ -96,12 +94,7 @@ impl State {
           // We check the special case of a dropped connection.
           // We can actually clean up the resource if dropped and there are no writes to flush
           let buf_write = buf_write.lock().expect("Could not acquire unpoisoned write lock");
-          if buf_write.count() > 0 {
-            return true
-          } else {
-            self.clear_timers(deps.timers());
-            return false
-          }
+          return buf_write.count() > 0;
         }
 
         // Only update the sequence gap if the sequence is newer
@@ -120,9 +113,8 @@ impl State {
           buf.notify_one();
         }
 
-        let now = deps.now();
         for ack in handle_acks(&mut bytes, &mut self.sequence, deps) {
-          netstat_out.rtt.store(self.netstat.rtt.measure(now - ack.when), OSeqCst);
+          netstat_out.rtt.store(self.netstat.rtt.measure(when - ack.when), OSeqCst);
           deps.on_packet_acked(addr_pair, ack.seq_no);
         }
 

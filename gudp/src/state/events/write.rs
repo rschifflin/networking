@@ -9,12 +9,11 @@ use cond_mutex::CondMutex;
 
 use crate::state::{State, Deps, SentSeqNo, util};
 use crate::types::READ_BUFFER_TAG;
-use crate::constants::{header, SENT_SEQ_BUF_SIZE};
+use crate::constants::{header, time_ms, SENT_SEQ_BUF_SIZE};
 
 fn terminal<D: Deps>(state: &State, buf_read: &CondMutex<Bring, READ_BUFFER_TAG>, deps: &mut D) -> io::Result<bool> {
   let lock = buf_read.lock().expect("Could not acquire unpoisoned read lock");
   lock.notify_all();
-  state.clear_timers(deps.timers());
   Ok(false)
 }
 
@@ -34,6 +33,11 @@ impl State {
     let mut buf_write = buf_write.lock().expect("Could not acquire unpoisoned write lock");
     loop {
       if buf_write.count() <= 0 {
+        if (deps.now() - self.last_send) >= time_ms::HEARTBEAT {
+          buf_write.push_back(&[]);
+          continue;
+        }
+
         // Called with buf_write locked, to prevent a "write then hangup" race
         if status.app_has_hup() { return terminal(self, buf_read, deps); }
         return Ok(true);
@@ -78,9 +82,7 @@ impl State {
               netstat_out.loss.store(self.netstat.loss.lost(1), OSeqCst);
             }
           };
-
-          // TODO: Timer pass
-          util::bump_heartbeat(self.socket_id, &mut self.last_send, when, deps.timers());
+          self.last_send = when;
 
           // Bump to the next unsent sequence number
           self.sequence.local_seq_no = self.sequence.local_seq_no.wrapping_add(1);
