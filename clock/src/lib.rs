@@ -1,14 +1,9 @@
 use std::time::Instant;
 
+pub mod sys;
+pub mod mock;
+
 /// Monotonic non-decreasing clock
 pub trait Clock {
   fn now(&self) -> Instant;
-}
-
-pub struct SystemClock();
-
-impl Clock for SystemClock {
-  fn now(&self) -> Instant {
-    Instant::now()
-  }
 }

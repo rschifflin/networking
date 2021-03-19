@@ -24,7 +24,7 @@ pub enum WithOpt {
 pub struct Front<'a, T: Alloc> {
   pub size_bytes: usize,
 
-  bring: &'a mut Bring<T>,
+  bring: &'a mut BringT<T>,
   src_size_bytes: usize,
 }
 
@@ -40,7 +40,7 @@ impl<'a, T: Alloc> Front<'a, T> {
 }
 
 #[derive(Debug)]
-pub struct Bring<T: Alloc> {
+pub struct BringT<T: Alloc> {
   pub(crate) alloc: PhantomData<T>,
   pub(crate) buffer: Vec<u8>,
   pub(crate) count: usize,
@@ -49,10 +49,10 @@ pub struct Bring<T: Alloc> {
   pub(crate) next_idx: usize
 }
 
-impl<T: Alloc> Bring<T> {
-  pub fn from_vec(buffer: Vec<u8>) -> Bring<T> {
+impl<T: Alloc> BringT<T> {
+  pub fn from_vec(buffer: Vec<u8>) -> BringT<T> {
     let remaining = buffer.len();
-    Bring {
+    BringT {
       alloc: PhantomData,
       buffer,
       count: 0,

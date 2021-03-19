@@ -1,5 +1,6 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::sync::atomic::Ordering::SeqCst as OSeqCst;
 
 use crate::types::OnWrite;
 use crate::state;
@@ -19,7 +20,7 @@ pub struct Connection {
 
 impl Drop for Connection {
   fn drop(&mut self) {
-    let (_, _, ref status) = *self.shared;
+    let (_, _, ref status, _) = *self.shared;
     status.set_app_hup();
   }
 }
@@ -29,21 +30,47 @@ impl Connection {
       Connection { on_write, shared, id }
     }
 
+    #[inline]
+    pub fn rtt_ms(&self) -> u32 {
+      let (_, _, _, ref netstat_out) = *self.shared;
+      netstat_out.rtt.load(OSeqCst)
+    }
+
+    #[inline]
+    pub fn loss_pct(&self) -> u32 {
+      let (_, _, _, ref netstat_out) = *self.shared;
+      netstat_out.loss.load(OSeqCst)
+    }
+
+    // TODO: Put the writer behind a condvar mutex to allow blocking writes
+    // Return None if the buffer exceeds 128 packets
+    pub fn try_send(&self, buf: &[u8]) -> Option<io::Result<usize>> {
+      let (ref _buf_read, ref buf_write, ref status, _) = *self.shared;
+      status.check_err().map(|m| Some(m)).transpose()?;
+
+      let mut buf_write = match buf_write.lock() {
+        Ok(inner) => if inner.count() > 128 { return None } else { inner },
+        Err(e) => return Some(Err(error::poisoned_write_lock(e)))
+      };
+
+      let size = buf_write.push_back(buf);
+      drop(buf_write);
+      Some((self.on_write)(size)) // Wake on send to flush all writes immediately
+    }
+
     pub fn send(&self, buf: &[u8]) -> io::Result<usize> {
-      let (ref _buf_read, ref buf_write, ref status) = *self.shared;
+      let (ref _buf_read, ref buf_write, ref status, _) = *self.shared;
       status.check_err()?;
 
       let mut buf_write = buf_write.lock().map_err(error::poisoned_write_lock)?;
-      let push_result = buf_write.push_back(buf);
+      let size = buf_write.push_back(buf);
       drop(buf_write);
-      match push_result {
-        Some(size) => (self.on_write)(size), // Wake on send to flush all writes immediately
-        None => Err(error::no_space_to_write())
-      }
+
+      (self.on_write)(size) // Wake on send to flush all writes immediately
     }
 
     pub fn recv(&self, buf: &mut [u8]) -> io::Result<usize> {
-      let (ref buf_read, ref _buf_write, ref status) = *self.shared;
+      let (ref buf_read, ref _buf_write, ref status, _) = *self.shared;
       let mut buf_read = buf_read.lock().map_err(error::poisoned_read_lock)?;
 
       let mut health = status.check_err();
@@ -80,7 +107,7 @@ impl Connection {
 
     // Much simpler case since its nonblocking nature means we never worry about the condvar
     pub fn try_recv(&self, buf: &mut [u8]) -> Option<io::Result<usize>> {
-      let (ref buf_read, ref _buf_write, ref status) = *self.shared;
+      let (ref buf_read, ref _buf_write, ref status, _) = *self.shared;
       buf_read.lock().map_err(error::poisoned_read_lock).and_then(|mut buf_read| {
         if buf_read.count() > 0 {
           let pop_result = buf_read.pop_front(buf);

@@ -5,7 +5,7 @@ use std::io;
 use mio::{Poll, Waker};
 use crossbeam::channel;
 
-use clock::{Clock, SystemClock};
+use clock::{Clock, sys};
 
 use log::warn;
 use crate::types::{FromDaemon, ToDaemon};
@@ -41,7 +41,7 @@ impl Service {
   }
 
   pub fn initialize(conf: Conf) -> io::Result<Service> {
-    Self::initialize_with_clock(conf, SystemClock())
+    Self::initialize_with_clock(conf, sys::Clock())
   }
 
   pub fn connect<A: ToSocketAddrs>(&self, socket: UdpSocket, to_addr: A) -> io::Result<Connection> {

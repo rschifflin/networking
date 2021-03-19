@@ -1,9 +1,10 @@
 use std::net::SocketAddr;
+use std::sync::atomic::Ordering::SeqCst as OSeqCst;
 use std::io;
-
 use mio::net::UdpSocket as MioUdpSocket;
+
 use bring::WithOpt;
-use bring::bounded::Bring;
+use bring::Bring;
 use cond_mutex::CondMutex;
 
 use crate::state::{State, Deps, SentSeqNo, util};
@@ -24,7 +25,7 @@ impl State {
   //    Err(e) when an io error occurs on write. NOTE: It may be WouldBlock, which is non-fatal
 
   pub fn write<D: Deps>(&mut self, io: &mut MioUdpSocket, peer_addr: SocketAddr, deps: &mut D) -> io::Result<bool> {
-    let (ref buf_read, ref buf_write, ref status) = *self.shared;
+    let (ref buf_read, ref buf_write, ref status, ref netstat_out) = *self.shared;
     // NOTE: Currently ONLY a timeout can cause a peer_hup, and socket cleanup happens immediately.
     // We will never end up here in the single-threaded event loop writing to a peer which has hung up.
     // So we don't check for peer_hup here. If we add a protocol-level fin message, this may change.
@@ -62,14 +63,23 @@ impl State {
           let sent_idx = sent_seq_no as usize % SENT_SEQ_BUF_SIZE;
 
           // Only notify for contentful packets
-          if total_size_bytes > header::SIZE_BYTES {
+          let prev_sent_seq_no = if total_size_bytes > header::SIZE_BYTES {
             deps.on_packet_sent((self.local_addr, peer_addr), header::SIZE_BYTES..total_size_bytes, sent_seq_no);
-            self.sequence.sent_seq_buf[sent_idx] = Some(SentSeqNo::new(sent_seq_no, when));
+
+            // Swap with previous at this location. If exists and unacked, it's a lost packet
+            self.sequence.sent_seq_buf[sent_idx].replace(SentSeqNo::new(sent_seq_no, when))
           } else {
             // Erase the 'old' buffer entry for rare cases of high packet loss leading to unintentional acks
-            self.sequence.sent_seq_buf[sent_idx] = None;
-          }
+            self.sequence.sent_seq_buf[sent_idx].take()
+          };
 
+          if let Some(ssn) = prev_sent_seq_no {
+            if !ssn.acked {
+              netstat_out.loss.store(self.netstat.loss.lost(1), OSeqCst);
+            }
+          };
+
+          // TODO: Timer pass
           util::bump_heartbeat(self.socket_id, &mut self.last_send, when, deps.timers());
 
           // Bump to the next unsent sequence number

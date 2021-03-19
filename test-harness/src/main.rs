@@ -1,6 +1,6 @@
 use gui::Args;
 
-mod test_clock;
+use clock::mock;
 mod gui;
 
 fn main() {
@@ -14,15 +14,15 @@ fn main() {
   let socket = std::net::UdpSocket::bind(&listen_addr).expect("Could not bind");
   socket.set_nonblocking(true).expect("Could not set nonblocking!");
 
-  let tclock = test_clock::TestClock::new(std::time::Instant::now());
+  let tclock = mock::Clock::new(std::time::Instant::now());
 
   let service = gudp::Builder::new()
     .clock(tclock.clone())
-    .on_packet_sent(Box::new(|(local_addr, peer_addr), buf, sequence_no| {
-      println!("wrote [{}] {}=>{}: {:?}", sequence_no, local_addr, peer_addr, buf);
+    .on_packet_sent(Box::new(|_addr_pair, buf, sequence_no| {
+      println!("ON_SENT {} {:?}", sequence_no, buf);
     }))
-    .on_packet_acked(Box::new(|(local_addr, peer_addr), sequence_no| {
-      println!("acked [{}] {}=>{}", sequence_no, local_addr, peer_addr);
+    .on_packet_acked(Box::new(|_addr_pair, sequence_no| {
+      println!("ON_ACKED {}", sequence_no);
     }))
     .build()
     .expect("Could not initialize gudp service");

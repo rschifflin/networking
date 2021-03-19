@@ -11,3 +11,4 @@ mod timer;
 
 pub use connection::{Connection, Listener};
 pub use service::{Builder, Service};
+pub use constants::header::MAGIC_BYTES as PROTOCOL_ID;

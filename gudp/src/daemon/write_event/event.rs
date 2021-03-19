@@ -38,18 +38,18 @@ pub fn handle<C: Clock>(mut token_entry: TokenEntry, pending_write_keybuf: &mut 
                 // WouldBlock is fine for mio, we just try again later
                 if e.kind() == std::io::ErrorKind::WouldBlock {
                   break; // Stop iterating peers, the io would block
-                } else {
-                  // SOMEDAY: Convey more error info to app side. Maybe set remote drop flags based on errorkind?
-                  let errno = e.raw_os_error();
-                  for (_addr, peer_state) in peers.iter() {
-                    peer_state.on_io_error(errno, s);
-                  }
-
-                  trace!("OnWriteable: IO encountered error, dropping all peers. Caused by {}", peer_addr);
-                  poll::deregister_io(&mut socket.io, s);
-                  token_entry.remove();
-                  break; // Stop iterating peers, they're all dead
                 }
+
+                // SOMEDAY: Convey more error info to app side. Maybe set remote drop flags based on errorkind?
+                let errno = e.raw_os_error();
+                for (_addr, peer_state) in peers.iter() {
+                  peer_state.on_io_error(errno, s);
+                }
+
+                trace!("OnWriteable: IO encountered error, dropping all peers. Caused by {}", peer_addr);
+                poll::deregister_io(&mut socket.io, s);
+                token_entry.remove();
+                break; // Stop iterating peers, they're all dead
               }
             }
           },
@@ -59,13 +59,15 @@ pub fn handle<C: Clock>(mut token_entry: TokenEntry, pending_write_keybuf: &mut 
 
     PeerType::Direct(addr, state) => {
       match state.write(&mut socket.io, *addr, s) {
-        Ok(_) => { /* Success or WouldBlock */ },
+        Ok(_) => { /* Success */ },
         Err(e) => {
-          // SOMEDAY: Convey more error info to app side. Maybe set remote drop flags based on errorkind?
-          let errno = e.raw_os_error();
-          state.on_io_error(errno, s);
-          poll::deregister_io(&mut socket.io, s);
-          token_entry.remove();
+          if e.kind() != std::io::ErrorKind::WouldBlock {
+            // SOMEDAY: Convey more error info to app side. Maybe set remote drop flags based on errorkind?
+            let errno = e.raw_os_error();
+            state.on_io_error(errno, s);
+            poll::deregister_io(&mut socket.io, s);
+            token_entry.remove();
+          }
         }
       }
     }

@@ -1,7 +1,8 @@
 use std::net::SocketAddr;
+use std::sync::atomic::Ordering::SeqCst as OSeqCst;
 
 use crate::socket::{self, ConnOpts};
-use crate::state::{State, FSM, Deps, Sequence, shared};
+use crate::state::{State, FSM, Deps, Sequence, NetStat, shared};
 use crate::timer::{Timers, TimerKind};
 use crate::constants::time_ms;
 
@@ -11,6 +12,10 @@ impl State {
     let timers = deps.timers();
     timers.add((socket_id, TimerKind::Timeout), when + time_ms::TIMEOUT);
     timers.add((socket_id, TimerKind::Heartbeat), when + time_ms::HEARTBEAT);
+    let shared = shared::new();
+
+    let rtt_ms = shared.3.rtt.load(OSeqCst);
+    let netstat = NetStat::new(rtt_ms);
 
     // Notify that we have pending initial writes to send
     deps.notify_write(socket_id);
@@ -22,7 +27,8 @@ impl State {
       sequence: Sequence::new(), // TODO: Use deps.rand() to randomize seq no
       last_recv: when,
       last_send: when,
-      fsm: FSM::Handshaking { conn_opts }
+      netstat,
+      fsm: FSM::Handshaking { conn_opts },
     }
   }
 }

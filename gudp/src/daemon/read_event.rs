@@ -73,11 +73,15 @@ pub fn handle<C: Clock>(mut token_entry: TokenEntry, s: &mut daemon::State<C>) {
               /* create+handle new peer */
               (None, Some(conn_opts)) => {
                 let socket_id = (token, peer_addr);
+                trace!("Creating new peer: {}", peer_addr);
                 let mut peer_state = State::init(local_addr, socket_id, conn_opts.clone(), s);
 
                 // If state update fails, we simply don't insert the new peer
                 if peer_state.read(socket.local_addr, peer_addr, size, s) {
+                  trace!("> Inserting new peer: {}", peer_addr);
                   peers.insert(peer_addr, peer_state);
+                } else {
+                  trace!("> Ignoring new peer: {}", peer_addr);
                 };
               },
             }

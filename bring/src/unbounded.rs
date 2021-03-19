@@ -1,7 +1,7 @@
 use byteorder::{BigEndian, WriteBytesExt};
 use slice_pair::SlicePairMut;
 
-use crate::bring::Bring as BringT;
+use crate::bring::BringT;
 use crate::bring::AllocGrow;
 use crate::bring::PREFIX_BYTES;
 

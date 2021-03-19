@@ -21,7 +21,7 @@ pub fn handle_failure(e: io::Error, token_map: &mut HashMap<Token, Socket>) -> i
   for (_, socket) in token_map.into_iter() {
     match &socket.peer_type {
       PeerType::Direct(_addr, state) => {
-        let (ref buf_read, ref _buf_write, ref status) = *state.shared;
+        let (ref buf_read, ref _buf_write, ref status, _) = *state.shared;
         let lock = buf_read.lock().expect("Could not acquire unpoisoned read lock");
         status.set_io_err(errno);
         lock.notify_all();
@@ -30,7 +30,7 @@ pub fn handle_failure(e: io::Error, token_map: &mut HashMap<Token, Socket>) -> i
 
       PeerType::Passive { ref peers, .. } => {
         for (_addr, peer_state) in peers.iter() {
-          let (ref buf_read, ref _buf_write, ref status) = *peer_state.shared;
+          let (ref buf_read, ref _buf_write, ref status, _) = *peer_state.shared;
           let lock = buf_read.lock().expect("Could not acquire unpoisoned read lock");
           status.set_io_err(errno);
           lock.notify_all();

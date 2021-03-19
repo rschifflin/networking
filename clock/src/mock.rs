@@ -1,15 +1,15 @@
 use std::sync::{Arc, Mutex};
 use std::time::{Instant, Duration};
-use clock::Clock;
+use super::Clock as ClockT;
 
 #[derive(Clone)]
-pub struct TestClock {
+pub struct Clock {
   now: Arc<Mutex<Instant>>
 }
 
-impl TestClock {
-  pub fn new(now: Instant) -> TestClock {
-    TestClock {
+impl Clock {
+  pub fn new(now: Instant) -> Clock {
+    Clock {
       now: Arc::new(Mutex::new(now))
     }
   }
@@ -20,7 +20,7 @@ impl TestClock {
   }
 }
 
-impl Clock for TestClock {
+impl ClockT for Clock {
   fn now(&self) -> Instant {
     let now = self.now.lock().expect("Could not acquire unpoisoned test clock mutex");
     *now

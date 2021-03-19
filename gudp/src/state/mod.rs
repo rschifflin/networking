@@ -7,6 +7,7 @@ use crate::socket::{self, ConnOpts};
 pub use status::Status;
 pub use shared::Shared;
 pub use deps::Deps;
+use netstat::NetStat;
 use sequence::{Sequence, SentSeqNo};
 
 mod sequence;
@@ -15,6 +16,7 @@ mod status;
 mod events;
 mod util;
 mod deps;
+mod netstat;
 
 /// Connection state
 /// Tracks all the behavior of a given connection
@@ -25,7 +27,8 @@ pub struct State {
   pub last_recv: Instant,
   pub last_send: Instant,
   pub sequence: Sequence,
-  pub fsm: FSM
+  pub netstat: NetStat,
+  pub fsm: FSM,
 }
 
 pub enum FSM {

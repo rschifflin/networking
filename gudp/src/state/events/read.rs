@@ -1,5 +1,6 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::sync::atomic::Ordering::SeqCst as OSeqCst;
 use std::io;
 
 use crate::types::FromDaemon as ToService;
@@ -12,7 +13,7 @@ impl State {
   // Returns true otherwise
   pub fn read<D: Deps>(&mut self, local_addr: SocketAddr, peer_addr: SocketAddr, size: usize, deps: &mut D) -> bool {
     let addr_pair = (local_addr, peer_addr);
-    let (ref buf_read, ref buf_write, ref status) = *self.shared;
+    let (ref buf_read, ref buf_write, ref status, ref netstat_out) = *self.shared;
 
     // TODO: Should we handle a poisoned lock state here? IE if a thread with a connection panics,
     // what should the daemon do about it? Just close the connection?
@@ -38,6 +39,7 @@ impl State {
           Ok(_) => {
             /* Initial response handling */
             // This was relevant socket activity, so bump the timeout
+            // TODO: Timeout pass
             util::bump_timeout(self.socket_id, &mut self.last_recv, deps.now(), deps.timers());
             let mut bytes: [u8; 4] = [0,0,0,0];
 
@@ -45,17 +47,21 @@ impl State {
             // Peer's very first 'local' sequence # always sets our remote_seq_no
             bytes.copy_from_slice(deps.buffer(header::LOCAL_SEQ_NO_RANGE));
             let seq_no = u32::from_be_bytes(bytes);
+            // TODO: Should netstat care about packet loss until connected?
             self.sequence.remote_seq_no = seq_no;
 
             if size > header::SIZE_BYTES {
-              // TODO: Warn if fails from src buffer too small or dst buffer full?
-              if let Some(_) = buf.push_back(&mut deps.buffer(header::SIZE_BYTES..size)) {
-                buf.notify_one();
-                drop(buf);
-              };
+              buf.push_back(&mut deps.buffer(header::SIZE_BYTES..size));
+              buf.notify_one();
+              drop(buf);
             }
 
-            handle_acks(&mut bytes, &mut self.sequence, addr_pair, deps);
+            let now = deps.now();
+            for ack in handle_acks(&mut bytes, &mut self.sequence, deps) {
+              netstat_out.rtt.store(self.netstat.rtt.measure(now - ack.when), OSeqCst);
+              deps.on_packet_acked(addr_pair, ack.seq_no);
+            }
+
             self.fsm = FSM::Connected;
             true
           },
@@ -75,10 +81,12 @@ impl State {
         bytes.copy_from_slice(deps.buffer(header::LOCAL_SEQ_NO_RANGE));
         let seq_no = u32::from_be_bytes(bytes);
         let seq_gap = match sequence::distance(self.sequence.remote_seq_no, seq_no) {
-          None => return true, // Drop this filtered-out stale packet
-          Some(gap) => gap
+          sequence::Distance::Old => return true, // Discard any jitter older than 33 packets ago
+          sequence::Distance::Redundant => None, // Keep jitter within 33 seconds, but don't redundantly ack it
+          sequence::Distance::New(n) => Some(n) // Keep and ack
         };
 
+        // TODO: Timer pass
         util::bump_timeout(self.socket_id, &mut self.last_recv, deps.now(), deps.timers());
 
         // The connection only sets app_has_hup on drop, which can only occur
@@ -96,30 +104,38 @@ impl State {
           }
         }
 
-        if size <= header::SIZE_BYTES {
-          self.sequence.update_remote(seq_no, seq_gap);
-        } else {
-          // We only ack when we can place the payload in full on the buffer
-          // TODO: Warn if fails from src buffer too small or dst buffer full?
-          if let Some(_) = buf.push_back(&mut deps.buffer(header::SIZE_BYTES..size)) {
-            self.sequence.update_remote(seq_no, seq_gap);
-            buf.notify_one();
-          };
+        // Only update the sequence gap if the sequence is newer
+        // NOTE: We still need to expose this packet to the read buffer so we can't just drop it altogether
+        // TODO: Do we need to ignore 'very new' packets still?
+        if let Some(gap) = seq_gap {
+          self.netstat.loss.found(1);
+          // Doom packets older than the oldest sequence number now
+          let lost = self.sequence.clear_old(gap);
+          netstat_out.loss.store(self.netstat.loss.lost(lost), OSeqCst);
+          self.sequence.update_remote(seq_no, gap);
         }
 
-        handle_acks(&mut bytes, &mut self.sequence, addr_pair, deps);
+        if size > header::SIZE_BYTES {
+          buf.push_back(&mut deps.buffer(header::SIZE_BYTES..size));
+          buf.notify_one();
+        }
+
+        let now = deps.now();
+        for ack in handle_acks(&mut bytes, &mut self.sequence, deps) {
+          netstat_out.rtt.store(self.netstat.rtt.measure(now - ack.when), OSeqCst);
+          deps.on_packet_acked(addr_pair, ack.seq_no);
+        }
+
         true
       }
     }
   }
 }
 
-fn handle_acks<D: Deps>(bytes: &mut [u8; 4], sequence: &mut Sequence, addr_pair: (SocketAddr, SocketAddr), deps: &mut D) {
+fn handle_acks<'a, D: Deps>(bytes: &mut [u8; 4], sequence: &'a mut Sequence, deps: &mut D) -> sequence::AckIter<'a> {
   bytes.copy_from_slice(deps.buffer(header::REMOTE_SEQ_NO_RANGE));
   let ack_no = u32::from_be_bytes(*bytes);
   bytes.copy_from_slice(deps.buffer(header::REMOTE_SEQ_TAIL_RANGE));
   let ack_tail = u32::from_be_bytes(*bytes);
-  for ack in sequence.iter_acks(ack_no, ack_tail) {
-    deps.on_packet_acked(addr_pair, ack);
-  }
+  sequence.iter_acks(ack_no, ack_tail)
 }

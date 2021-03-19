@@ -4,7 +4,7 @@ use glium::glutin;
 use glutin::event_loop::EventLoop;
 
 use state::State;
-use crate::test_clock::TestClock;
+use crate::mock::Clock;
 
 mod ui;
 mod sys;
@@ -15,7 +15,7 @@ mod run;
 pub struct Args {
   pub service: gudp::Service,
   pub socket: UdpSocket,
-  pub clock: TestClock
+  pub clock: Clock,
 }
 
 pub fn gui_loop(args: Args) {
