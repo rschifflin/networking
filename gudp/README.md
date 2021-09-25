@@ -13,13 +13,13 @@ for any application wishing to open a GUDP connection. In reality, any individua
 will likely include it as a library to run on its own thread.
 
 Components:
-  GUDP Daemon:
+- GUDP Daemon:
     The event loop that manages all GUDP connections. Run in its own thread.
     Handles the state machine for each individual connection and evented io.
-  GUDP Listener:
+- GUDP Listener:
     App-facing listener object with accept interface.
     Corresponds to a 'passive open' with many peers multiplexed onto a single UDP socket.
-  GUDP Connection:
+- GUDP Connection:
     App-facing connection object with send/recv interface.
     Wraps a UDP socket and provides a virtual connection to a peer.
 
